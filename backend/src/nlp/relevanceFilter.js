@@ -1,45 +1,112 @@
-const PASSPORT_TERMS = [
-    "passport",
-    "passports",
-    "passport application",
-    "passport renewal",
-    "passport appointment",
-    "passport office",
-    "passport service",
-    "passport seva",
-    "passport verification",
-    "passport police verification",
-    "passport number",
-    "passport validity",
-    "passport biometric",
-    "passport photo",
-    "passport issue",
-    "passport rejected",
-    "passport approved",
-    "passport visa",
+const PASSPORT_CONTEXT_PATTERNS = [
+    /\bpassport\s+(application|applications)\b/i,
+    /\bpassport\s+(apply|applying|applied)\b/i,
+    /\bapply\s+for\s+(a\s+)?passport\b/i,
+
+    /\bnew\s+passport\b/i,
+
+    /\bpassport\s+(renewal|renew|renewing|renewed)\b/i,
+    /\brenew\s+(my|your|a)\s+passport\b/i,
+
+    /\bpassport\s+(reissue|re-issue)\b/i,
+    /\bre-?issue\s+(my|your|a)\s+passport\b/i,
+
+    /\bexpired\s+passport\b/i,
+
+    /\bpassport\s+appointment\b/i,
+    /\bpassport\s+office\b/i,
+    /\bpassport\s+seva\b/i,
+    /\bpassport\s+service\b/i,
+
+    /\bpassport\s+(verification|police verification)\b/i,
+
+    /\bpassport\s+(documents?|requirements?|eligibility)\b/i,
+
+    /\bpassport\s+(number|validity|biometric|photo)\b/i,
+
+    /\bpassport\s+(issue|issues|problem|problems)\b/i,
+
+    /\bpassport\s+(rejected|rejection|approved|approval)\b/i,
+
+    /\bpassport\s+(and|or|with)\s+(visa|travel|immigration|border|airport)\b/i,
+
+    /\b(visa|travel|immigration|border|airport)\s+(and|with|using)\s+(my\s+)?passport\b/i,
+
+    /\b(chinese|indian|british|american|us|uk|canadian|australian|portuguese|french|german)\s+passport\b/i,
+
+    /\bpassport\s+(name|names|holder|holders)\b/i,
+
+    /\bmy\s+passport\b/i,
+    /\bpassport\s+was\b/i,
+    /\bpassport\s+has\b/i,
+    /\bpassport\s+is\b/i
+];
+
+/*
+ * Passport-related words that are not enough by themselves
+ * to prove that the post is about a real passport document.
+ */
+const WEAK_RELATED_TERMS = [
     "visa",
     "immigration",
     "travel document",
-    "travel documents",
-    "tatkal passport"
+    "travel documents"
 ];
 
+/*
+ * Known non-passport-document meanings.
+ *
+ * These are topic-level exclusions rather than individual
+ * post/title exclusions.
+ */
 const IRRELEVANT_PATTERNS = [
     "my passport backup",
     "passport holder",
     "passport wallet",
     "passport cover",
+    "passport compartment",
+
     "bike & brew passport",
     "passport to worlds",
     "passport to world",
-    "passport compartment"
+
+    /*
+     * Vehicle/product usage.
+     */
+    "honda passport",
+    "passport trailsport",
+    "passport trail sport",
+    "passport suv",
+    "passport model",
+    "passport vehicle",
+
+    /*
+     * Gaming / entertainment / promotional usage.
+     */
+    "freefire passport",
+    "free fire passport",
+    "passport game",
+
+    /*
+     * Food / event / tourism promotion usage.
+     */
+    "coffee passport",
+    "food passport",
+    "beer passport",
+    "brewery passport",
+    "summer passport",
+    "passport challenge"
 ];
 
-function checkRelevance(text) {
-    const normalized = (text || "")
+function normalizeText(text) {
+    return (text || "")
         .toLowerCase()
         .replace(/\s+/g, " ")
         .trim();
+}
+
+function checkRelevance(text) {
+    const normalized = normalizeText(text);
 
     if (!normalized) {
         return {
@@ -48,34 +115,64 @@ function checkRelevance(text) {
         };
     }
 
-    const matchedTerm = PASSPORT_TERMS.find((term) =>
-        normalized.includes(term)
-    );
-
-    if (!matchedTerm) {
-        return {
-            isRelevant: false,
-            reason: "no_passport_topic_term"
-        };
-    }
-
-    const matchedIrrelevantPattern = IRRELEVANT_PATTERNS.find((pattern) =>
-        normalized.includes(pattern)
+    /*
+     * First reject known non-document uses.
+     */
+    const matchedIrrelevantPattern = IRRELEVANT_PATTERNS.find(
+        (pattern) => normalized.includes(pattern)
     );
 
     if (matchedIrrelevantPattern) {
         return {
             isRelevant: false,
             reason: "irrelevant_passport_usage",
-            matchedTerm,
             matchedIrrelevantPattern
         };
     }
 
+    /*
+     * Then look for meaningful passport-document context.
+     */
+    const matchedContextPattern = PASSPORT_CONTEXT_PATTERNS.find(
+        (pattern) => pattern.test(normalized)
+    );
+
+    if (matchedContextPattern) {
+        return {
+            isRelevant: true,
+            reason: "passport_context_detected"
+        };
+    }
+
+    /*
+     * A bare "passport" is not enough.
+     */
+    if (normalized.includes("passport")) {
+        return {
+            isRelevant: false,
+            reason: "passport_without_meaningful_context"
+        };
+    }
+
+    /*
+     * Visa/immigration/travel alone does not make something
+     * a passport post.
+     */
+    const matchedRelatedTerm = WEAK_RELATED_TERMS.find(
+        (term) => normalized.includes(term)
+    );
+
+    if (matchedRelatedTerm) {
+        return {
+            isRelevant: false,
+            reason: "related_topic_without_passport_context",
+            matchedTerm: matchedRelatedTerm
+        };
+    }
+
     return {
-        isRelevant: true,
-        reason: "passport_topic_detected",
-        matchedTerm
+        isRelevant: false,
+        reason: "no_passport_topic_term"
     };
 }
 

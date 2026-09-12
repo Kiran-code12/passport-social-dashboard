@@ -4,6 +4,7 @@ require("dotenv").config();
 
 const supabase = require("./src/config/supabase");
 const postsRoutes = require("./src/routes/postsRoutes");
+const translationRoutes = require("./src/routes/translationRoutes");
 
 const app = express();
 
@@ -13,6 +14,7 @@ const app = express();
 
 app.use(cors());
 app.use(express.json());
+
 
 // ========================================
 // HEALTH CHECK
@@ -64,6 +66,7 @@ app.get("/api/test-db", async (req, res) => {
 // ========================================
 
 app.use("/api/posts", postsRoutes);
+app.use("/api/translate", translationRoutes);
 
 // ========================================
 // 404 HANDLER

@@ -8,24 +8,24 @@ const { categorizeText } = require("./src/nlp/categorizer");
 const { analyzeSentiment } = require("./src/nlp/sentimentAnalyzer");
 const { detectRegion } = require("./src/nlp/regionDetector");
 
-async function reprocessPosts() {
-    console.log("Starting Reddit post reprocessing...\n");
+async function reprocessYouTubePosts() {
+    console.log("Starting YouTube post reprocessing...\n");
 
     const { data: posts, error } = await supabase
         .from("posts")
         .select("*")
-        .eq("platform", "reddit");
+        .eq("platform", "youtube");
 
     if (error) {
         throw error;
     }
 
     if (!posts || posts.length === 0) {
-        console.log("No Reddit posts found.");
+        console.log("No YouTube posts found.");
         return;
     }
 
-    console.log(`Found ${posts.length} Reddit posts.\n`);
+    console.log(`Found ${posts.length} YouTube posts.\n`);
 
     let relevantCount = 0;
     let irrelevantCount = 0;
@@ -41,79 +41,35 @@ async function reprocessPosts() {
             .join(" ")
             .trim();
 
-        /*
-         * -----------------------------------------
-         * 1. Gibberish / spam analysis
-         * -----------------------------------------
-         */
         const gibberish = await analyzeText(text);
-
-        /*
-         * -----------------------------------------
-         * 2. Passport relevance analysis
-         * -----------------------------------------
-         */
         const relevance = checkRelevance(text);
 
-        /*
-         * A gibberish post must NEVER remain relevant.
-         *
-         * This is important because an old database value
-         * of is_relevant=true must not survive reprocessing.
-         */
         const finalIsRelevant =
             relevance.isRelevant && !gibberish.isGibberish;
 
-        /*
-         * -----------------------------------------
-         * 3. Categorization
-         * -----------------------------------------
-         *
-         * Only categorize meaningful relevant posts.
-         */
         let category = null;
 
         if (finalIsRelevant) {
             category = await categorizeText(text);
         }
 
-        /*
-         * -----------------------------------------
-         * 4. Sentiment
-         * -----------------------------------------
-         */
         let sentiment = null;
 
         if (finalIsRelevant) {
             sentiment = await analyzeSentiment(text);
         }
 
-        /*
-         * -----------------------------------------
-         * 5. Region detection
-         * -----------------------------------------
-         */
         let region = null;
 
         if (finalIsRelevant) {
             region = detectRegion(text);
         }
 
-        /*
-         * -----------------------------------------
-         * 6. Update database
-         * -----------------------------------------
-         */
         const { error: updateError } = await supabase
             .from("posts")
             .update({
                 is_relevant: finalIsRelevant,
                 is_gibberish: gibberish.isGibberish,
-
-                /*
-                 * Clear NLP fields for posts that are no
-                 * longer considered relevant.
-                 */
                 category: finalIsRelevant ? category : null,
                 sentiment: finalIsRelevant ? sentiment : null,
                 region: finalIsRelevant ? region : null
@@ -125,15 +81,9 @@ async function reprocessPosts() {
                 `Failed to update ${post.post_id}:`,
                 updateError
             );
-
             continue;
         }
 
-        /*
-         * -----------------------------------------
-         * 7. Counters
-         * -----------------------------------------
-         */
         if (gibberish.isGibberish) {
             gibberishCount++;
         } else if (finalIsRelevant) {
@@ -142,29 +92,25 @@ async function reprocessPosts() {
             irrelevantCount++;
         }
 
-        /*
-         * -----------------------------------------
-         * 8. Progress output
-         * -----------------------------------------
-         */
         console.log(`  Processed ${i + 1}/${posts.length}`);
 
         console.log({
             postId: post.post_id,
+            relevant: finalIsRelevant,
+            relevanceReason: relevance.reason,
             score: gibberish.score,
-            reasons: gibberish.reasons,
-            language: gibberish.language
+            reasons: gibberish.reasons
         });
     }
 
-    console.log("\nReddit reprocessing complete.");
+    console.log("\nYouTube reprocessing complete.");
     console.log(`Relevant: ${relevantCount}`);
     console.log(`Irrelevant: ${irrelevantCount}`);
     console.log(`Gibberish: ${gibberishCount}`);
 }
 
-reprocessPosts().catch((error) => {
-    console.error("\nReprocessing failed:");
+reprocessYouTubePosts().catch((error) => {
+    console.error("\nYouTube reprocessing failed:");
     console.error(error);
     process.exit(1);
 });

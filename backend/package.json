@@ -16,6 +16,10 @@
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
-    "franc": "^6.2.0"
+    "franc": "^6.2.0",
+    "json2csv": "^6.0.0-alpha.2",
+    "pdfkit": "^0.20.2",
+    "rss-parser": "^3.13.0",
+    "sentiment": "^5.0.2"
   }
 }
