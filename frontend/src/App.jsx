@@ -3,8 +3,8 @@ import "./App.css";
 import "./translation.css";
 import { getLanguageName } from "./languageNames";
 
-const API_BASE = "http://localhost:5000/api/posts";
-const TRANSLATE_API = "http://localhost:5000/api/translate";
+const API_BASE = "https://passport-social-dashboard-p1he.onrender.com/api/posts";
+const TRANSLATE_API = "https://passport-social-dashboard-p1he.onrender.com/api/translate";
 
 const translationLanguages = [
   ["english", "English", "eng"],
