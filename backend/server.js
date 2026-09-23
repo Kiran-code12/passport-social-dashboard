@@ -139,8 +139,24 @@ app.listen(PORT, () => {
 
 startScraperScheduler();
 
-  
-  warmUpModels().catch((error) => {
-    console.error("[Translator] Warm-up failed to start:", error.message);
-  });
+  /*
+   * Translation models are loaded lazily on first use by
+   * translationWorker.js's getPipeline() regardless of whether
+   * warm-up runs — warm-up only pre-loads them ahead of time so
+   * the first real request for each language doesn't pay the
+   * load cost. That eager loading of up to ~20 models at startup
+   * is opt-in (WARM_UP_MODELS=true) since it adds significant
+   * startup memory/CPU pressure; by default the backend starts
+   * without it and each model loads on demand instead.
+   */
+  if (process.env.WARM_UP_MODELS === "true") {
+    warmUpModels().catch((error) => {
+      console.error("[Translator] Warm-up failed to start:", error.message);
+    });
+  } else {
+    console.log(
+      "[Translator] Skipping model warm-up (set WARM_UP_MODELS=true to enable). " +
+      "Translation models will load on demand when first requested."
+    );
+  }
 });
