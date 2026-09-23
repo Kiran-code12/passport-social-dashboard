@@ -1,170 +1,182 @@
 require("dotenv").config();
 
 const supabase = require("./src/config/supabase");
-
-const { checkRelevance } = require("./src/nlp/relevanceFilter");
 const { analyzeText } = require("./src/nlp/gibberishFilter");
-const { categorizeText } = require("./src/nlp/categorizer");
-const { analyzeSentiment } = require("./src/nlp/sentimentAnalyzer");
-const { detectRegion } = require("./src/nlp/regionDetector");
 
-async function reprocessPosts() {
-    console.log("Starting Reddit post reprocessing...\n");
+// All platforms currently stored in the posts table.
+const SUPPORTED_PLATFORMS = ["youtube", "reddit", "bluesky"];
 
-    const { data: posts, error } = await supabase
-        .from("posts")
-        .select("*")
-        .eq("platform", "reddit");
+// Process posts in batches.
+const BATCH_SIZE = 500;
 
-    if (error) {
-        throw error;
-    }
+async function reprocessPostLanguages() {
+    console.log("Starting language reprocessing...\n");
 
-    if (!posts || posts.length === 0) {
-        console.log("No Reddit posts found.");
-        return;
-    }
+    let offset = 0;
 
-    console.log(`Found ${posts.length} Reddit posts.\n`);
+    let totalScanned = 0;
+    let totalChanged = 0;
+    let totalUnchanged = 0;
+    let totalErrors = 0;
 
-    let relevantCount = 0;
-    let irrelevantCount = 0;
-    let gibberishCount = 0;
+    const changeCounts = {};
 
-    for (let i = 0; i < posts.length; i++) {
-        const post = posts[i];
-
-        const text = [
-            post.original_text || "",
-            post.title || ""
-        ]
-            .join(" ")
-            .trim();
-
+    while (true) {
         /*
-         * -----------------------------------------
-         * 1. Gibberish / spam analysis
-         * -----------------------------------------
-         */
-        const gibberish = await analyzeText(text);
-
-        /*
-         * -----------------------------------------
-         * 2. Passport relevance analysis
-         * -----------------------------------------
-         */
-        const relevance = checkRelevance(text);
-
-        /*
-         * A gibberish post must NEVER remain relevant.
+         * IMPORTANT:
+         * Your posts table does NOT have a `title` column.
          *
-         * This is important because an old database value
-         * of is_relevant=true must not survive reprocessing.
+         * We therefore only retrieve columns that actually exist:
+         * post_id, original_text, language, platform.
          */
-        const finalIsRelevant =
-            relevance.isRelevant && !gibberish.isGibberish;
-
-        /*
-         * -----------------------------------------
-         * 3. Categorization
-         * -----------------------------------------
-         *
-         * Only categorize meaningful relevant posts.
-         */
-        let category = null;
-
-        if (finalIsRelevant) {
-            category = await categorizeText(text);
-        }
-
-        /*
-         * -----------------------------------------
-         * 4. Sentiment
-         * -----------------------------------------
-         */
-        let sentiment = null;
-
-        if (finalIsRelevant) {
-            sentiment = await analyzeSentiment(text);
-        }
-
-        /*
-         * -----------------------------------------
-         * 5. Region detection
-         * -----------------------------------------
-         */
-        let region = null;
-
-        if (finalIsRelevant) {
-            region = detectRegion(text);
-        }
-
-        /*
-         * -----------------------------------------
-         * 6. Update database
-         * -----------------------------------------
-         */
-        const { error: updateError } = await supabase
+        const { data: posts, error } = await supabase
             .from("posts")
-            .update({
-                is_relevant: finalIsRelevant,
-                is_gibberish: gibberish.isGibberish,
+            .select("post_id, original_text, language, platform")
+            .in("platform", SUPPORTED_PLATFORMS)
+            .range(offset, offset + BATCH_SIZE - 1);
 
-                /*
-                 * Clear NLP fields for posts that are no
-                 * longer considered relevant.
-                 */
-                category: finalIsRelevant ? category : null,
-                sentiment: finalIsRelevant ? sentiment : null,
-                region: finalIsRelevant ? region : null
-            })
-            .eq("post_id", post.post_id);
+        if (error) {
+            throw error;
+        }
 
-        if (updateError) {
-            console.error(
-                `Failed to update ${post.post_id}:`,
-                updateError
+        if (!posts || posts.length === 0) {
+            break;
+        }
+
+        console.log(
+            `Processing posts ${offset + 1}-${offset + posts.length}...\n`
+        );
+
+        for (const post of posts) {
+            totalScanned++;
+
+            /*
+             * Use the actual stored post text.
+             *
+             * The new analyzeText() contains the Unicode-script
+             * language guard:
+             *
+             * Gurmukhi     -> pan
+             * Devanagari   -> hin
+             * Arabic       -> arb
+             * Bengali      -> ben
+             * etc.
+             *
+             * If there is no strong Unicode-script signal,
+             * analyzeText() falls back to franc().
+             */
+            const text = (post.original_text || "").trim();
+
+            const analysis = analyzeText(text);
+
+            const newLanguage = analysis.detectedLanguage || null;
+            const oldLanguage = post.language || null;
+
+            /*
+             * Nothing to update if the detected language is
+             * already the stored language.
+             */
+            if (oldLanguage === newLanguage) {
+                totalUnchanged++;
+                continue;
+            }
+
+            /*
+             * VERY IMPORTANT:
+             *
+             * Update ONLY the language column.
+             *
+             * This script does NOT modify:
+             * - translations
+             * - summaries
+             * - relevance
+             * - gibberish status
+             * - category
+             * - sentiment
+             * - region
+             * - original_text
+             * - platform
+             */
+            const { error: updateError } = await supabase
+                .from("posts")
+                .update({
+                    language: newLanguage
+                })
+                .eq("post_id", post.post_id);
+
+            if (updateError) {
+                totalErrors++;
+
+                console.error(
+                    `Failed to update ${post.post_id}:`,
+                    updateError
+                );
+
+                continue;
+            }
+
+            totalChanged++;
+
+            const changeKey = `${oldLanguage || "null"} -> ${
+                newLanguage || "null"
+            }`;
+
+            changeCounts[changeKey] =
+                (changeCounts[changeKey] || 0) + 1;
+
+            console.log(
+                `[CHANGED] ${post.post_id}: ` +
+                `${oldLanguage || "null"} -> ` +
+                `${newLanguage || "null"} ` +
+                `(${post.platform})`
             );
-
-            continue;
         }
 
+        offset += posts.length;
+
         /*
-         * -----------------------------------------
-         * 7. Counters
-         * -----------------------------------------
+         * If this batch contains fewer than BATCH_SIZE posts,
+         * we've reached the end.
          */
-        if (gibberish.isGibberish) {
-            gibberishCount++;
-        } else if (finalIsRelevant) {
-            relevantCount++;
-        } else {
-            irrelevantCount++;
+        if (posts.length < BATCH_SIZE) {
+            break;
         }
-
-        /*
-         * -----------------------------------------
-         * 8. Progress output
-         * -----------------------------------------
-         */
-        console.log(`  Processed ${i + 1}/${posts.length}`);
-
-        console.log({
-            postId: post.post_id,
-            score: gibberish.score,
-            reasons: gibberish.reasons,
-            language: gibberish.language
-        });
     }
 
-    console.log("\nReddit reprocessing complete.");
-    console.log(`Relevant: ${relevantCount}`);
-    console.log(`Irrelevant: ${irrelevantCount}`);
-    console.log(`Gibberish: ${gibberishCount}`);
+    console.log("\n========================================");
+    console.log("LANGUAGE REPROCESSING COMPLETE");
+    console.log("========================================");
+
+    console.log(`Posts scanned:     ${totalScanned}`);
+    console.log(`Languages changed: ${totalChanged}`);
+    console.log(`Unchanged:         ${totalUnchanged}`);
+    console.log(`Errors:            ${totalErrors}`);
+
+    console.log("\nLanguage changes:");
+
+    if (Object.keys(changeCounts).length === 0) {
+        console.log("  No language values changed.");
+    } else {
+        for (const [change, count] of Object.entries(changeCounts)) {
+            console.log(`  ${change}: ${count}`);
+        }
+    }
+
+    console.log("\nTargeted checks:");
+
+    console.log(
+        `  fra -> pan: ${changeCounts["fra -> pan"] || 0}`
+    );
+
+    console.log(
+        `  fra -> hin: ${changeCounts["fra -> hin"] || 0}`
+    );
+
+    console.log("\nOnly the `language` column was modified.");
 }
 
-reprocessPosts().catch((error) => {
-    console.error("\nReprocessing failed:");
+reprocessPostLanguages().catch((error) => {
+    console.error("\nLanguage reprocessing failed:");
     console.error(error);
     process.exit(1);
 });

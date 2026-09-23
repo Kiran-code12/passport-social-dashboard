@@ -7,10 +7,8 @@ const {
 
 const router = express.Router();
 
-// Get supported translation languages
 router.get("/languages", getTranslationLanguages);
 
-// Translate text
 router.post("/", translatePost);
 
 module.exports = router;

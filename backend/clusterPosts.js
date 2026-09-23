@@ -8,7 +8,7 @@ async function runClustering() {
 
     const { data: posts, error } = await supabase
         .from("posts")
-        .select("id, original_text, cluster_id")
+        .select("id, original_text, summary, translations, category, cluster_id")
         .eq("is_relevant", true)
         .eq("is_gibberish", false)
         .order("published_at", { ascending: false });
@@ -24,7 +24,7 @@ async function runClustering() {
         return;
     }
 
-    const clusteredPosts = clusterPosts(posts);
+    const clusteredPosts = await clusterPosts(posts);
 
     console.log("Updating cluster IDs in Supabase...");
 
@@ -54,9 +54,13 @@ async function runClustering() {
     console.log(`Clusters created: ${uniqueClusters.size}`);
 }
 
-runClustering()
-    .then(() => process.exit(0))
-    .catch(error => {
-        console.error("Clustering failed:", error.message);
-        process.exit(1);
-    });
+if (require.main === module) {
+    runClustering()
+        .then(() => process.exit(0))
+        .catch(error => {
+            console.error("Clustering failed:", error.message);
+            process.exit(1);
+        });
+}
+
+module.exports = { runClustering };

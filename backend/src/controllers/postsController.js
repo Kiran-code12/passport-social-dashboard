@@ -4,7 +4,205 @@ const PDFDocument = require("pdfkit");
 
 /*
 |--------------------------------------------------------------------------
-| Helper: Apply post filters
+| Engagement calculation
+|--------------------------------------------------------------------------
+|
+| Each platform exposes different engagement metrics.
+|
+| YouTube:
+| views + likes + comments
+|
+| Reddit:
+| score/upvotes + comments
+|
+| Bluesky:
+| likes + reposts + replies/comments
+|
+*/
+
+const calculateEngagement = (post) => {
+    const engagement = post.engagement || {};
+    const platform = String(post.platform || "").toLowerCase();
+
+    if (platform === "youtube") {
+        return (
+            Number(engagement.views || 0) +
+            Number(engagement.likes || 0) +
+            Number(engagement.comments || 0)
+        );
+    }
+
+    if (platform === "reddit") {
+        return (
+            Number(
+                engagement.score ??
+                engagement.likes ??
+                0
+            ) +
+            Number(engagement.comments || 0)
+        );
+    }
+
+    if (platform === "bluesky") {
+        return (
+            Number(engagement.likes || 0) +
+            Number(engagement.reposts || 0) +
+            Number(engagement.comments || 0)
+        );
+    }
+
+    /*
+     * Fallback for any future platform.
+     */
+    return Number(post.total_engagement || 0);
+};
+
+
+/*
+|--------------------------------------------------------------------------
+| Add calculated engagement to posts
+|--------------------------------------------------------------------------
+*/
+
+const addEngagement = (posts) => {
+    return posts.map((post) => ({
+        ...post,
+        total_engagement: calculateEngagement(post)
+    }));
+};
+
+
+/*
+|--------------------------------------------------------------------------
+| Category helper
+|--------------------------------------------------------------------------
+*/
+
+const getCategoryName = (post) => {
+    if (!post.category) {
+        return "";
+    }
+
+    if (typeof post.category === "string") {
+        try {
+            const parsed = JSON.parse(post.category);
+
+            if (
+                typeof parsed === "object" &&
+                parsed !== null
+            ) {
+                return (
+                    parsed.category ||
+                    parsed.name ||
+                    parsed.label ||
+                    parsed.primary ||
+                    ""
+                );
+            }
+
+            return String(parsed);
+        } catch {
+            return post.category;
+        }
+    }
+
+    if (typeof post.category === "object") {
+        return (
+            post.category.category ||
+            post.category.name ||
+            post.category.label ||
+            post.category.primary ||
+            ""
+        );
+    }
+
+    return "";
+};
+
+
+/*
+|--------------------------------------------------------------------------
+| Export sort helper
+|--------------------------------------------------------------------------
+|
+| The CSV/PDF exports receive the same `sort` / `order` query params as
+| GET /api/posts. This sorts export rows the way the dashboard feed is
+| sorted (same fields as getPosts, same NaN handling, and the same
+| tie-break by post id), so an exported file lists posts in the order
+| the user sees on screen. Without params it keeps the previous default:
+| newest published_at first.
+|--------------------------------------------------------------------------
+*/
+
+const EXPORT_SORT_FIELDS = [
+    "published_at",
+    "created_at",
+    "platform",
+    "category",
+    "engagement"
+];
+
+const sortPostsForExport = (posts, sort, order) => {
+    const field = EXPORT_SORT_FIELDS.includes(sort)
+        ? sort
+        : "published_at";
+
+    const descending = String(order).toLowerCase() !== "asc";
+
+    const toNumber = (value) => {
+        const n = Number(value);
+        return Number.isFinite(n) ? n : 0;
+    };
+
+    const toTimestamp = (value) => {
+        if (!value) {
+            return 0;
+        }
+
+        const t = new Date(value).getTime();
+        return Number.isFinite(t) ? t : 0;
+    };
+
+    const sortKey = (post) => {
+        if (field === "engagement") {
+            return toNumber(post.total_engagement);
+        }
+
+        if (field === "platform") {
+            return String(post.platform || "").toLowerCase();
+        }
+
+        if (field === "category") {
+            return getCategoryName(post).toLowerCase();
+        }
+
+        return toTimestamp(post[field]);
+    };
+
+    const idOf = (post) => String(post.id || post.post_id || "");
+
+    return [...posts].sort((a, b) => {
+        const av = sortKey(a);
+        const bv = sortKey(b);
+
+        if (av === bv) {
+            // Same tie-break as the dashboard: ascending by id.
+            return idOf(a).localeCompare(idOf(b));
+        }
+
+        if (typeof av === "string") {
+            const c = av.localeCompare(bv);
+            return descending ? -c : c;
+        }
+
+        return descending ? bv - av : av - bv;
+    });
+};
+
+
+/*
+|--------------------------------------------------------------------------
+| Build common posts query
 |--------------------------------------------------------------------------
 */
 
@@ -28,128 +226,115 @@ const buildPostsQuery = (req) => {
         .eq("is_gibberish", false);
 
     if (platform) {
-        query = query.eq("platform", platform);
+        query = query.eq(
+            "platform",
+            platform.toLowerCase()
+        );
     }
 
+    /*
+     * Region is stored as a compact PascalCase token
+     * (e.g. "UnitedStates", "UnitedArabEmirates") but the
+     * frontend field is free text (e.g. "United States",
+     * "us"). An exact match here would almost never hit,
+     * so we strip whitespace and match as a substring.
+     */
     if (region) {
-        query = query.eq("region", region);
+        const normalizedRegion = region.replace(/\s+/g, "");
+
+        query = query.ilike(
+            "region",
+            `%${normalizedRegion}%`
+        );
     }
 
     if (creator) {
+        /*
+         * `.or()` takes a raw filter string in which , ( ) and quotes
+         * are syntax, so typed text spliced in unquoted could break the
+         * query (a comma returned HTTP 500) or inject extra conditions
+         * (bypassing the creator filter). Wrapping the value in double
+         * quotes, with \ and " escaped, makes PostgREST read it as
+         * plain text. The ILIKE wildcard behavior is unchanged.
+         */
+        const quoted = `"%${String(creator).replace(/[\\"]/g, "\\$&")}%"`;
+
         query = query.or(
-            `creator_name.ilike.%${creator}%,creator_handle.ilike.%${creator}%`
+            `creator_name.ilike.${quoted},creator_handle.ilike.${quoted}`
         );
     }
 
     if (language) {
-        query = query.eq("language", language);
+        query = query.eq(
+            "language",
+            language
+        );
     }
 
     /*
-     * category is currently stored as a JSON string, for example:
+     * Category may be stored as either:
      *
-     * {"category":"Renewal","score":1,"method":"domain_rule"}
+     * "Renewal"
      *
-     * Therefore we search inside the stored JSON text instead of
-     * checking for exact equality.
+     * OR
+     *
+     * {"category":"Renewal",...}
+     *
+     * The ilike approach supports both current formats.
      */
     if (category) {
         query = query.ilike(
             "category",
-            `%"category":"${category}"%`
+            `%${category}%`
         );
     }
 
     if (sentiment) {
-        query = query.eq("sentiment", sentiment);
+        query = query.eq(
+            "sentiment",
+            sentiment
+        );
     }
 
-    /*
-     * Explicit time range
-     */
     if (from) {
-        query = query.gte("published_at", from);
+        query = query.gte(
+            "published_at",
+            from
+        );
     }
 
     if (to) {
-        query = query.lte("published_at", to);
+        query = query.lte(
+            "published_at",
+            to
+        );
     }
 
     /*
-     * Optional last-24-hours filter.
+     * last24h is calculated using the current time.
      *
-     * The scraper is responsible for collecting recent posts,
-     * while this option allows the API/dashboard to explicitly
-     * request the last 24 hours.
+     * This remains a real time filter. It does not
+     * manufacture fresh posts when the database is stale.
      */
     if (last24h === "true") {
-        const now = new Date();
-        const twentyFourHoursAgo = new Date(
-            now.getTime() - 24 * 60 * 60 * 1000
-        );
+        const twentyFourHoursAgo =
+            new Date(
+                Date.now() - 24 * 60 * 60 * 1000
+            ).toISOString();
 
         query = query.gte(
             "published_at",
-            twentyFourHoursAgo.toISOString()
-        );
-
-        query = query.lte(
-            "published_at",
-            now.toISOString()
+            twentyFourHoursAgo
         );
     }
 
     return query;
 };
 
-/*
-|--------------------------------------------------------------------------
-| Helper: Calculate engagement
-|--------------------------------------------------------------------------
-*/
-
-const addEngagement = (posts) => {
-    return (posts || []).map(post => {
-        const engagement = post.engagement || {};
-
-        const totalEngagement =
-            Number(engagement.views || 0) +
-            Number(engagement.likes || 0) +
-            Number(engagement.comments || 0);
-
-        return {
-            ...post,
-            total_engagement: totalEngagement
-        };
-    });
-};
 
 /*
 |--------------------------------------------------------------------------
-| Helper: Get category name from stored JSON string
-|--------------------------------------------------------------------------
-*/
-
-const getCategoryName = (category) => {
-    if (!category) {
-        return "";
-    }
-
-    if (typeof category === "object") {
-        return category.category || "";
-    }
-
-    try {
-        const parsed = JSON.parse(category);
-        return parsed.category || "";
-    } catch {
-        return String(category);
-    }
-};
-
-/*
-|--------------------------------------------------------------------------
-| GET /api/posts
+| GET POSTS
 |--------------------------------------------------------------------------
 */
 
@@ -169,26 +354,139 @@ const getPosts = async (req, res) => {
             "engagement"
         ];
 
-        const sortField = allowedSortFields.includes(sort)
-            ? sort
-            : "published_at";
+        const sortField =
+            allowedSortFields.includes(sort)
+                ? sort
+                : "published_at";
 
         const ascending =
-            order.toLowerCase() === "asc";
+            String(order).toLowerCase() === "asc";
 
-        let query = buildPostsQuery(req);
 
         /*
-         * Engagement is stored inside JSONB, so it is calculated
-         * and sorted in JavaScript.
+         * Engagement cannot be sorted directly by Supabase
+         * because it is calculated from platform-specific
+         * JSONB fields.
          */
-        if (sortField !== "engagement") {
-            query = query.order(sortField, {
-                ascending
+        if (sortField === "engagement") {
+
+            const { data, error } =
+                await buildPostsQuery(req);
+
+            if (error) {
+                return res.status(500).json({
+                    success: false,
+                    message: "Failed to fetch posts",
+                    error: error.message
+                });
+            }
+
+            let posts = addEngagement(
+                data || []
+            );
+
+
+            /*
+             * Minimum engagement filter
+             */
+            if (minEngagement !== undefined) {
+                const minimum =
+                    Number(minEngagement);
+
+                if (!Number.isNaN(minimum)) {
+                    posts = posts.filter(
+                        (post) =>
+                            post.total_engagement >=
+                            minimum
+                    );
+                }
+            }
+
+
+            /*
+             * Sort calculated engagement
+             */
+            posts.sort((a, b) => {
+
+                const aValue =
+                    a.total_engagement;
+
+                const bValue =
+                    b.total_engagement;
+
+                return ascending
+                    ? aValue - bValue
+                    : bValue - aValue;
+            });
+
+
+            return res.json({
+                success: true,
+                count: posts.length,
+
+                filters: {
+                    platform:
+                        req.query.platform || null,
+
+                    region:
+                        req.query.region || null,
+
+                    creator:
+                        req.query.creator || null,
+
+                    language:
+                        req.query.language || null,
+
+                    category:
+                        req.query.category || null,
+
+                    sentiment:
+                        req.query.sentiment || null,
+
+                    minEngagement:
+                        minEngagement || null,
+
+                    from:
+                        req.query.from || null,
+
+                    to:
+                        req.query.to || null,
+
+                    last24h:
+                        req.query.last24h === "true",
+
+                    sort: sortField,
+
+                    order:
+                        ascending
+                            ? "asc"
+                            : "desc"
+                },
+
+                data: posts
             });
         }
 
-        const { data, error } = await query;
+
+        /*
+         * Normal database sorting
+         */
+        let query =
+            buildPostsQuery(req);
+
+        query = query.order(
+            sortField,
+            {
+                ascending
+            }
+        );
+
+
+        const {
+            data,
+            error
+        } = await query;
+
 
         if (error) {
             return res.status(500).json({
@@ -198,44 +496,34 @@ const getPosts = async (req, res) => {
             });
         }
 
-        let filteredData = addEngagement(data);
+
+        let posts = addEngagement(
+            data || []
+        );
+
 
         /*
          * Minimum engagement filter
          */
         if (minEngagement !== undefined) {
-            const minimum = Number(minEngagement);
+
+            const minimum =
+                Number(minEngagement);
 
             if (!Number.isNaN(minimum)) {
-                filteredData = filteredData.filter(
-                    post =>
-                        post.total_engagement >= minimum
+                posts = posts.filter(
+                    (post) =>
+                        post.total_engagement >=
+                        minimum
                 );
             }
         }
 
-        /*
-         * Engagement sorting
-         */
-        if (sortField === "engagement") {
-            filteredData.sort((a, b) => {
-                if (ascending) {
-                    return (
-                        a.total_engagement -
-                        b.total_engagement
-                    );
-                }
 
-                return (
-                    b.total_engagement -
-                    a.total_engagement
-                );
-            });
-        }
-
-        res.json({
+        return res.json({
             success: true,
-            count: filteredData.length,
+
+            count: posts.length,
 
             filters: {
                 platform:
@@ -276,10 +564,11 @@ const getPosts = async (req, res) => {
                         : "desc"
             },
 
-            data: filteredData
+            data: posts
         });
 
     } catch (error) {
+
         console.error(
             "Get posts error:",
             error
@@ -293,33 +582,81 @@ const getPosts = async (req, res) => {
     }
 };
 
+
 /*
 |--------------------------------------------------------------------------
-| GET /api/posts/search
+| Text search helper
 |--------------------------------------------------------------------------
+|
+| Shared by searchPosts and the CSV/PDF exports, so exports
+| honor an active search term the same way the search
+| endpoint does.
+|--------------------------------------------------------------------------
+*/
+
+const matchesSearchTerm = (post, searchTerm) => {
+    const originalMatch = (post.original_text || "")
+        .toLowerCase()
+        .includes(searchTerm);
+
+    const summaryMatch = (post.summary || "")
+        .toLowerCase()
+        .includes(searchTerm);
+
+    const translationMatch = Object.values(
+        post.translations || {}
+    ).some((translation) =>
+        String(translation).toLowerCase().includes(searchTerm)
+    );
+
+    return originalMatch || summaryMatch || translationMatch;
+};
+
+
+/*
+|--------------------------------------------------------------------------
+| SEARCH POSTS
+|--------------------------------------------------------------------------
+|
+| Searches:
+| - original_text
+| - summary
+| - translations
+|
 */
 
 const searchPosts = async (req, res) => {
     try {
+
         const { q } = req.query;
 
         if (!q || !q.trim()) {
             return res.status(400).json({
                 success: false,
-                message: "Search query is required"
+                message:
+                    "Search query is required"
             });
         }
 
-        const searchTerm = q.trim().toLowerCase();
+        const searchTerm =
+            q.trim().toLowerCase();
 
-        const { data, error } = await supabase
+
+        const {
+            data,
+            error
+        } = await supabase
             .from("posts")
             .select("*")
             .eq("is_relevant", true)
             .eq("is_gibberish", false)
-            .order("published_at", {
-                ascending: false
-            });
+            .order(
+                "published_at",
+                {
+                    ascending: false
+                }
+            );
+
 
         if (error) {
             return res.status(500).json({
@@ -329,51 +666,28 @@ const searchPosts = async (req, res) => {
             });
         }
 
-        const filteredPosts = data.filter(post => {
 
-            /*
-             * Original content
-             */
-            const originalMatch =
-                (post.original_text || "")
-                    .toLowerCase()
-                    .includes(searchTerm);
-
-            /*
-             * AI summary
-             */
-            const summaryMatch =
-                (post.summary || "")
-                    .toLowerCase()
-                    .includes(searchTerm);
-
-            /*
-             * Translations
-             */
-            const translationMatch =
-                Object.values(
-                    post.translations || {}
-                ).some(translation =>
-                    String(translation)
-                        .toLowerCase()
-                        .includes(searchTerm)
-                );
-
-            return (
-                originalMatch ||
-                summaryMatch ||
-                translationMatch
+        const filteredPosts =
+            (data || []).filter((post) =>
+                matchesSearchTerm(post, searchTerm)
             );
-        });
 
-        res.json({
+
+        const posts =
+            addEngagement(
+                filteredPosts
+            );
+
+
+        return res.json({
             success: true,
             query: q.trim(),
-            count: filteredPosts.length,
-            data: filteredPosts
+            count: posts.length,
+            data: posts
         });
 
     } catch (error) {
+
         console.error(
             "Search error:",
             error
@@ -387,15 +701,21 @@ const searchPosts = async (req, res) => {
     }
 };
 
+
 /*
 |--------------------------------------------------------------------------
-| GET /api/posts/export/csv
+| CSV EXPORT
+|--------------------------------------------------------------------------
+|
+| Uses the same filters as GET /api/posts.
 |--------------------------------------------------------------------------
 */
 
 const exportCSV = async (req, res) => {
     try {
-        let query = buildPostsQuery(req);
+
+        let query =
+            buildPostsQuery(req);
 
         query = query.order(
             "published_at",
@@ -404,43 +724,84 @@ const exportCSV = async (req, res) => {
             }
         );
 
-        const { data, error } = await query;
+
+        const {
+            data,
+            error
+        } = await query;
+
 
         if (error) {
             return res.status(500).json({
                 success: false,
-                message: "Failed to fetch posts",
+                message:
+                    "Failed to fetch posts",
                 error: error.message
             });
         }
 
-        let exportData = addEngagement(data);
+
+        let posts =
+            addEngagement(
+                data || []
+            );
+
 
         /*
-         * Apply minimum engagement to exported data as well.
+         * Apply active search term, same matching as
+         * GET /api/posts/search.
          */
-        const { minEngagement } = req.query;
+        if (req.query.q && req.query.q.trim()) {
+            const searchTerm = req.query.q.trim().toLowerCase();
 
-        if (minEngagement !== undefined) {
-            const minimum = Number(minEngagement);
+            posts = posts.filter((post) =>
+                matchesSearchTerm(post, searchTerm)
+            );
+        }
+
+
+        /*
+         * Apply minimum engagement
+         */
+        if (
+            req.query.minEngagement !==
+            undefined
+        ) {
+
+            const minimum =
+                Number(
+                    req.query.minEngagement
+                );
 
             if (!Number.isNaN(minimum)) {
-                exportData = exportData.filter(
-                    post =>
-                        post.total_engagement >= minimum
+
+                posts = posts.filter(
+                    (post) =>
+                        post.total_engagement >=
+                        minimum
                 );
             }
         }
 
+
         /*
-         * Convert category JSON into a readable category name.
+         * Order like the dashboard feed (requested sort + order).
          */
-        exportData = exportData.map(post => ({
-            ...post,
-            category: getCategoryName(
-                post.category
-            )
-        }));
+        posts = sortPostsForExport(
+            posts,
+            req.query.sort,
+            req.query.order
+        );
+
+
+        const exportData =
+            posts.map((post) => ({
+                ...post,
+
+                category:
+                    getCategoryName(post)
+            }));
+
 
         const fields = [
             "platform",
@@ -458,13 +819,18 @@ const exportCSV = async (req, res) => {
             "summary"
         ];
 
-        const parser = new Parser({
-            fields
-        });
 
-        const csv = parser.parse(
-            exportData
-        );
+        const parser =
+            new Parser({
+                fields
+            });
+
+
+        const csv =
+            parser.parse(
+                exportData
+            );
+
 
         res.header(
             "Content-Type",
@@ -478,6 +844,7 @@ const exportCSV = async (req, res) => {
         res.send(csv);
 
     } catch (error) {
+
         console.error(
             "CSV export error:",
             error
@@ -485,21 +852,28 @@ const exportCSV = async (req, res) => {
 
         res.status(500).json({
             success: false,
-            message: "CSV export failed",
+            message:
+                "CSV export failed",
             error: error.message
         });
     }
 };
 
+
 /*
 |--------------------------------------------------------------------------
-| GET /api/posts/export/pdf
+| PDF EXPORT
+|--------------------------------------------------------------------------
+|
+| Uses the same filters as GET /api/posts.
 |--------------------------------------------------------------------------
 */
 
 const exportPDF = async (req, res) => {
     try {
-        let query = buildPostsQuery(req);
+
+        let query =
+            buildPostsQuery(req);
 
         query = query.order(
             "published_at",
@@ -508,33 +882,76 @@ const exportPDF = async (req, res) => {
             }
         );
 
-        const { data, error } = await query;
+
+        const {
+            data,
+            error
+        } = await query;
+
 
         if (error) {
             throw error;
         }
 
-        let exportData = addEngagement(data);
+
+        let posts =
+            addEngagement(
+                data || []
+            );
+
 
         /*
-         * Apply minimum engagement filter
+         * Apply active search term, same matching as
+         * GET /api/posts/search.
          */
-        const { minEngagement } = req.query;
+        if (req.query.q && req.query.q.trim()) {
+            const searchTerm = req.query.q.trim().toLowerCase();
 
-        if (minEngagement !== undefined) {
-            const minimum = Number(minEngagement);
+            posts = posts.filter((post) =>
+                matchesSearchTerm(post, searchTerm)
+            );
+        }
+
+
+        /*
+         * Minimum engagement
+         */
+        if (
+            req.query.minEngagement !==
+            undefined
+        ) {
+
+            const minimum =
+                Number(
+                    req.query.minEngagement
+                );
 
             if (!Number.isNaN(minimum)) {
-                exportData = exportData.filter(
-                    post =>
-                        post.total_engagement >= minimum
+
+                posts = posts.filter(
+                    (post) =>
+                        post.total_engagement >=
+                        minimum
                 );
             }
         }
 
-        const doc = new PDFDocument({
-            margin: 40
-        });
+
+        /*
+         * Order like the dashboard feed (requested sort + order).
+         */
+        posts = sortPostsForExport(
+            posts,
+            req.query.sort,
+            req.query.order
+        );
+
+
+        const doc =
+            new PDFDocument({
+                margin: 40
+            });
+
 
         res.setHeader(
             "Content-Type",
@@ -546,108 +963,151 @@ const exportPDF = async (req, res) => {
             'attachment; filename="passport-posts.pdf"'
         );
 
+
         doc.pipe(res);
 
+
         doc.fontSize(20).text(
-            "Passport Social Media Posts",
+            "Passport Social Intelligence",
             {
                 align: "center"
             }
         );
 
-        doc.moveDown();
 
         doc.fontSize(10).text(
-            `Total Posts: ${exportData.length}`
+            `Posts exported: ${posts.length}`,
+            {
+                align: "center"
+            }
         );
+
 
         doc.moveDown();
 
-        exportData.forEach((post, index) => {
 
-            doc.fontSize(12).text(
-                `${index + 1}. ${post.platform || "Unknown Platform"}`
-            );
+        posts.forEach(
+            (post, index) => {
 
-            doc.fontSize(10).text(
-                `Creator: ${
-                    post.creator_name ||
-                    "Unknown"
-                }`
-            );
-
-            doc.text(
-                `Category: ${
+                const category =
                     getCategoryName(
-                        post.category
-                    ) || "Unknown"
-                }`
-            );
+                        post
+                    );
 
-            doc.text(
-                `Sentiment: ${
-                    post.sentiment ||
-                    "Unknown"
-                }`
-            );
 
-            doc.text(
-                `Engagement: ${
-                    post.total_engagement
-                }`
-            );
+                doc
+                    .fontSize(12)
+                    .text(
+                        `${index + 1}. ${
+                            post.platform
+                        }`
+                    );
 
-            doc.moveDown(0.5);
 
-            doc.text(
-                post.original_text ||
-                "No content"
-            );
+                doc
+                    .fontSize(10)
+                    .text(
+                        `Creator: ${
+                            post.creator_name ||
+                            "Unknown"
+                        }`
+                    );
 
-            if (post.summary) {
-                doc.moveDown(0.5);
+
+                if (category) {
+                    doc.text(
+                        `Category: ${category}`
+                    );
+                }
+
+
+                if (post.sentiment) {
+                    doc.text(
+                        `Sentiment: ${
+                            post.sentiment
+                        }`
+                    );
+                }
+
 
                 doc.text(
-                    `Summary: ${post.summary}`
+                    `Engagement: ${
+                        post.total_engagement
+                    }`
                 );
-            }
 
-            if (post.post_url) {
-                doc.moveDown(0.5);
+
+                doc.moveDown(0.3);
+
 
                 doc.text(
-                    `URL: ${post.post_url}`
+                    post.original_text ||
+                    "No content"
                 );
-            }
 
-            doc.moveDown();
 
-            /*
-             * Prevent content from going outside
-             * the printable page area.
-             */
-            if (doc.y > 720) {
-                doc.addPage();
+                if (post.summary) {
+
+                    doc.moveDown(0.3);
+
+                    doc.text(
+                        `Summary: ${
+                            post.summary
+                        }`
+                    );
+                }
+
+
+                if (post.post_url) {
+
+                    doc.moveDown(0.3);
+
+                    doc.text(
+                        `URL: ${
+                            post.post_url
+                        }`
+                    );
+                }
+
+
+                doc.moveDown();
+
+
+                if (doc.y > 720) {
+                    doc.addPage();
+                }
             }
-        });
+        );
+
 
         doc.end();
 
     } catch (error) {
+
         console.error(
             "PDF export failed:",
             error
         );
 
+
         if (!res.headersSent) {
+
             res.status(500).json({
                 success: false,
-                message: "PDF export failed",
+                message:
+                    "PDF export failed",
                 error: error.message
             });
         }
     }
 };
+
+
+/*
+|--------------------------------------------------------------------------
+| EXPORTS
+|--------------------------------------------------------------------------
+*/
 
 module.exports = {
     getPosts,

@@ -5,6 +5,8 @@ require("dotenv").config();
 const supabase = require("./src/config/supabase");
 const postsRoutes = require("./src/routes/postsRoutes");
 const translationRoutes = require("./src/routes/translationRoutes");
+const { startScraperScheduler } = require("./src/services/scraperScheduler");
+const { warmUpModels } = require("./src/nlp/translator");
 
 const app = express();
 
@@ -26,6 +28,7 @@ app.get("/api/health", (req, res) => {
         message: "Passport Dashboard API is running"
     });
 });
+
 
 // ========================================
 // DATABASE CONNECTION TEST
@@ -61,12 +64,20 @@ app.get("/api/test-db", async (req, res) => {
     }
 });
 
+
 // ========================================
 // POSTS API
 // ========================================
 
 app.use("/api/posts", postsRoutes);
+
+
+// ========================================
+// TRANSLATION API
+// ========================================
+
 app.use("/api/translate", translationRoutes);
+
 
 // ========================================
 // 404 HANDLER
@@ -79,6 +90,7 @@ app.use((req, res) => {
     });
 });
 
+
 // ========================================
 // GLOBAL ERROR HANDLER
 // ========================================
@@ -86,11 +98,35 @@ app.use((req, res) => {
 app.use((err, req, res, next) => {
     console.error("Server Error:", err);
 
-    res.status(500).json({
+    /*
+     * Translation validation / unsupported-language
+     * errors should be reported as a client error,
+     * not as a generic 500 server error.
+     */
+    const message = err?.message || "Internal server error";
+
+    const isClientError =
+        message.includes("Cannot translate") ||
+        message.includes("Unsupported target language") ||
+        message.includes("Source language") ||
+        message.includes("Text is required");
+
+    if (isClientError) {
+        return res.status(400).json({
+            success: false,
+            message
+        });
+    }
+
+    /*
+     * Unexpected errors remain genuine 500 errors.
+     */
+    return res.status(500).json({
         success: false,
         message: "Internal server error"
     });
 });
+
 
 // ========================================
 // START SERVER
@@ -99,5 +135,12 @@ app.use((err, req, res, next) => {
 const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+  console.log(`Server running on port ${PORT}`);
+
+startScraperScheduler();
+
+  
+  warmUpModels().catch((error) => {
+    console.error("[Translator] Warm-up failed to start:", error.message);
+  });
 });

@@ -1,30 +1,17 @@
 require("dotenv").config();
 
 const Parser = require("rss-parser");
-
 const supabase = require("../../config/supabase");
+const { preserveExistingTranslations } = require("../../services/preserveTranslations");
 
-const { analyzeText } =
-    require("../../nlp/gibberishFilter");
-
-const { categorizeText } =
-    require("../../nlp/categorizer");
-
-const { checkRelevance } =
-    require("../../nlp/relevanceFilter");
-
-const { summarizeText } =
-    require("../../nlp/summarizer");
-
-const { analyzeSentiment } =
-    require("../../nlp/sentimentAnalyzer");
-
-const { detectRegion } =
-    require("../../nlp/regionDetector");
-
+const { analyzeText } = require("../../nlp/gibberishFilter");
+const { categorizeText } = require("../../nlp/categorizer");
+const { checkRelevance } = require("../../nlp/relevanceFilter");
+const { summarizeText } = require("../../nlp/summarizer");
+const { analyzeSentiment } = require("../../nlp/sentimentAnalyzer");
+const { detectRegion } = require("../../nlp/regionDetector");
 
 const parser = new Parser();
-
 
 const SUBREDDITS = [
     "passport",
@@ -33,11 +20,8 @@ const SUBREDDITS = [
     "travel"
 ];
 
-
 const MAX_RETRIES = 2;
-
 const RETRY_DELAY_MS = 3000;
-
 const SUBREDDIT_DELAY_MS = 8000;
 
 
@@ -53,12 +37,6 @@ function sleep(ms) {
 
 /**
  * Clean Reddit HTML / entities.
- *
- * Reddit RSS content can contain:
- * - HTML tags
- * - escaped HTML
- * - HTML comments
- * - HTML entities
  */
 function decodeHtml(text) {
 
@@ -68,8 +46,6 @@ function decodeHtml(text) {
 
     let cleaned = String(text);
 
-
-    // Decode escaped HTML characters
     cleaned = cleaned
         .replace(/\\u003C/gi, "<")
         .replace(/\\u003E/gi, ">")
@@ -77,15 +53,11 @@ function decodeHtml(text) {
         .replace(/\\u0022/gi, '"')
         .replace(/\\u0027/gi, "'");
 
-
-    // Remove Reddit HTML comments
     cleaned = cleaned.replace(
         /<!--[\s\S]*?-->/g,
         " "
     );
 
-
-    // Convert common HTML tags to spaces
     cleaned = cleaned
         .replace(/<\/p>/gi, " ")
         .replace(/<br\s*\/?>/gi, " ")
@@ -93,15 +65,11 @@ function decodeHtml(text) {
         .replace(/<\/li>/gi, " ")
         .replace(/<\/h[1-6]>/gi, " ");
 
-
-    // Remove remaining HTML tags
     cleaned = cleaned.replace(
         /<[^>]*>/g,
         " "
     );
 
-
-    // Decode common HTML entities
     cleaned = cleaned
         .replace(/&nbsp;/gi, " ")
         .replace(/&#32;/g, " ")
@@ -110,32 +78,24 @@ function decodeHtml(text) {
         .replace(/&lt;/gi, "<")
         .replace(/&gt;/gi, ">")
         .replace(/&quot;/gi, '"')
-        .replace(/&#39;/g, "'")
+        .replace(/&#39;/gi, "'")
         .replace(/&#x27;/gi, "'")
         .replace(/&#x2F;/gi, "/");
 
-
-    // Decode decimal HTML entities
     cleaned = cleaned.replace(
         /&#(\d+);/g,
         (_, code) => {
-
             try {
-                return String.fromCodePoint(
-                    Number(code)
-                );
+                return String.fromCodePoint(Number(code));
             } catch {
                 return " ";
             }
         }
     );
 
-
-    // Decode hexadecimal HTML entities
     cleaned = cleaned.replace(
         /&#x([0-9a-f]+);/gi,
         (_, code) => {
-
             try {
                 return String.fromCodePoint(
                     parseInt(code, 16)
@@ -146,8 +106,6 @@ function decodeHtml(text) {
         }
     );
 
-
-    // Normalize whitespace
     cleaned = cleaned
         .replace(/\r\n/g, "\n")
         .replace(/\r/g, "\n")
@@ -155,7 +113,6 @@ function decodeHtml(text) {
         .replace(/\n{3,}/g, "\n\n")
         .replace(/\s+([,.!?;:])/g, "$1")
         .trim();
-
 
     return cleaned;
 }
@@ -194,7 +151,6 @@ async function normalizePost(
     const title =
         cleanTitle(post.title);
 
-
     const content =
         cleanContent(
             post.contentSnippet ||
@@ -202,12 +158,8 @@ async function normalizePost(
             ""
         );
 
-
-    // Same structure used by YouTube:
-    // title + description/content
     const combinedText =
         `${title}\n\n${content}`.trim();
-
 
     if (!combinedText) {
         return null;
@@ -215,7 +167,7 @@ async function normalizePost(
 
 
     // -----------------------------
-    // Step 1: Gibberish analysis
+    // Step 1: Gibberish
     // -----------------------------
 
     const analysis =
@@ -231,12 +183,11 @@ async function normalizePost(
 
 
     let category = null;
-
     let summary = null;
 
 
     // -----------------------------
-    // Step 3: Category + summary
+    // Step 3: Category + Summary
     // -----------------------------
 
     if (
@@ -283,90 +234,81 @@ async function normalizePost(
         );
 
 
+    /*
+     * Reddit RSS does not expose reliable
+     * score/comment/view counts.
+     *
+     * We intentionally keep these as zero
+     * instead of creating fake engagement.
+     */
+    const engagement = {
+        views: 0,
+        likes: 0,
+        comments: 0
+    };
+
+
     // -----------------------------
-    // Return database object
+    // Database object
     // -----------------------------
 
     return {
 
         platform: "reddit",
 
-
-        // Reddit post ID
         post_id:
             post.guid ||
             post.id ||
             post.link,
-
 
         creator_name:
             post.creator ||
             post.author ||
             null,
 
-
         creator_handle:
             post.creator
                 ? `u/${post.creator}`
                 : null,
 
-
         original_text:
             combinedText,
-
 
         post_url:
             post.link ||
             null,
-
 
         published_at:
             post.isoDate ||
             post.pubDate ||
             new Date().toISOString(),
 
-
         language:
             analysis.detectedLanguage,
 
-
         region,
-
 
         category,
 
-
         sentiment,
 
-
-        engagement: {
-            views: 0,
-            likes: 0,
-            comments: 0
-        },
-
+        engagement,
 
         summary,
 
-
         translations: {},
-
 
         is_gibberish:
             analysis.isGibberish,
 
-
         is_relevant:
             relevance.isRelevant,
-
 
         cluster_id:
             null,
 
-
         raw_data: {
             ...post,
-
             subreddit
         }
     };
@@ -374,7 +316,7 @@ async function normalizePost(
 
 
 /**
- * Fetch a subreddit RSS feed.
+ * Fetch subreddit RSS feed.
  */
 async function fetchSubreddit(
     subreddit
@@ -382,7 +324,6 @@ async function fetchSubreddit(
 
     const url =
         `https://www.reddit.com/r/${subreddit}/new.rss`;
-
 
     let lastError = null;
 
@@ -407,7 +348,7 @@ async function fetchSubreddit(
                     {
                         headers: {
                             "User-Agent":
-                                "nodejs:passport-social-dashboard:v1.0 (by /u/Few-Sand7706)",
+                                "nodejs:passport-social-dashboard:v1.0",
 
                             "Accept":
                                 "application/rss+xml, application/xml, text/xml"
@@ -429,9 +370,7 @@ async function fetchSubreddit(
 
 
             const feed =
-                await parser.parseString(
-                    xml
-                );
+                await parser.parseString(xml);
 
 
             console.log(
@@ -441,7 +380,6 @@ async function fetchSubreddit(
 
 
             return feed.items;
-
 
         } catch (error) {
 
@@ -489,9 +427,7 @@ async function fetchSubreddit(
 /**
  * Save posts to Supabase.
  */
-async function saveToSupabase(
-    posts
-) {
+async function saveToSupabase(posts) {
 
     if (posts.length === 0) {
 
@@ -503,6 +439,11 @@ async function saveToSupabase(
     }
 
 
+    // Keep translations already saved on re-fetched posts (see helper).
+    const rows =
+        await preserveExistingTranslations(posts);
+
+
     const {
         data,
         error
@@ -510,7 +451,7 @@ async function saveToSupabase(
         await supabase
             .from("posts")
             .upsert(
-                posts,
+                rows,
                 {
                     onConflict:
                         "platform,post_id"
@@ -553,11 +494,8 @@ async function runRedditScraper() {
 
 
     let totalFound = 0;
-
     let totalProcessed = 0;
-
     let totalSaved = 0;
-
     let totalSkipped = 0;
 
 
@@ -673,7 +611,6 @@ async function runRedditScraper() {
         "========================================"
     );
 
-
     console.log(
         `Total posts found: ${totalFound}`
     );
@@ -700,11 +637,6 @@ async function runRedditScraper() {
 }
 
 
-/**
- * Run directly with:
- *
- * node src/scrapers/reddit/redditScraper.js
- */
 if (
     require.main === module
 ) {
@@ -717,6 +649,7 @@ if (
             );
 
             process.exit(0);
+
         })
         .catch(error => {
 

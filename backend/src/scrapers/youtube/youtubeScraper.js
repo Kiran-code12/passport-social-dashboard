@@ -1,6 +1,7 @@
 require("dotenv").config();
 
 const supabase = require("../../config/supabase");
+const { preserveExistingTranslations } = require("../../services/preserveTranslations");
 const { analyzeText } = require("../../nlp/gibberishFilter");
 const { categorizeText } = require("../../nlp/categorizer");
 const { checkRelevance } = require("../../nlp/relevanceFilter");
@@ -47,7 +48,6 @@ async function searchRecentVideos(keyword) {
     return data.items || [];
 }
 
-// Fetch statistics and full descriptions
 async function fetchVideoStats(videoIds) {
     if (videoIds.length === 0) {
         return {};
@@ -97,7 +97,6 @@ async function normalizeVideo(item, stats) {
         snippet.description ||
         "";
 
-    // Combine title + description
     const combinedText =
         `${snippet.title}\n\n${fullDescription}`.trim();
 
@@ -197,10 +196,13 @@ async function saveToSupabase(posts) {
         return;
     }
 
+    // Keep translations already saved on re-fetched posts (see helper).
+    const rows = await preserveExistingTranslations(posts);
+
     const { data, error } =
         await supabase
             .from("posts")
-            .upsert(posts, {
+            .upsert(rows, {
                 onConflict: "platform,post_id"
             })
             .select();
@@ -268,7 +270,6 @@ async function runYoutubeScraper() {
     return normalized;
 }
 
-// Run directly
 if (require.main === module) {
     runYoutubeScraper()
         .then(() => {
