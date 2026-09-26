@@ -23,33 +23,10 @@ function stripHtml(text) {
         .trim();
 }
 
-/*
- * -----------------------------------------------------------------
- * Script-level language guard
- * -----------------------------------------------------------------
- *
- * franc() is a statistical (n-gram) language detector with no
- * awareness of Unicode script. When a post mixes a small amount of
- * real-language content (e.g. a Gurmukhi passport question) with a
- * larger amount of Latin-script platform metadata (English titles,
- * "Subscribe to our channel", hashtags, @handles, etc.), franc's
- * statistics get pulled toward an unrelated Latin-script language
- * (observed: Gurmukhi + English YouTube metadata being classified
- * as "fra"), even though the actual script present is unambiguous.
- *
- * This guard runs BEFORE franc() and only kicks in when a
- * non-Latin script is clearly, strongly present. It never touches
- * Latin-script text (English/French/Spanish/etc. always still fall
- * through to franc() exactly as before), and it requires both a
- * minimum character count and a minimum proportion of the text's
- * actual letters before overriding franc() — a single stray
- * character (e.g. from an emoji sequence or a misparsed symbol)
- * can never trigger it.
- */
+// --------------------------------------------------
+// Script-level language guard
+// --------------------------------------------------
 
-// Unicode script block -> ISO 639-3 code. Each range is a script
-// that unambiguously implies (or very strongly suggests) a single
-// language for the purposes of this dashboard's dataset.
 const SCRIPT_LANGUAGE_RANGES = [
     { code: "pan", pattern: /[\u0A00-\u0A7F]/gu }, // Gurmukhi (Punjabi)
     { code: "hin", pattern: /[\u0900-\u097F]/gu }, // Devanagari (Hindi)
@@ -71,34 +48,16 @@ const SCRIPT_LANGUAGE_RANGES = [
     { code: "rus", pattern: /[\u0400-\u04FF]/gu }, // Cyrillic
 ];
 
-// A single character (an emoji fragment, a misparsed symbol, a
-// stray character in an unrelated string) must never be enough to
-// override franc(). Both an absolute count and a proportion of the
-// text's actual letters are required.
 const MIN_SCRIPT_CHAR_COUNT = 6;
 const MIN_SCRIPT_RATIO = 0.15;
 
-// Hashtags and @mentions are usually platform metadata (topic
-// tags, handles) rather than the language of the post itself, so
-// they're excluded from the script signal where practical. URLs
-// are already stripped by the caller before this runs.
 function stripHashtagsAndMentions(text) {
     return text.replace(/[#@][\w-]+/gu, " ");
 }
 
-/**
- * Detect a strong, unambiguous non-Latin script signal in the
- * text. Returns an ISO 639-3 code if one script clearly dominates
- * the text's actual letters, or null if the signal isn't strong
- * enough (in which case the caller should fall back to franc()
- * exactly as before — this function is intentionally conservative).
- */
 function detectDominantScript(text) {
     const cleaned = stripHashtagsAndMentions(text || "");
 
-    // \p{L} = any Unicode "letter" character — this already
-    // excludes whitespace, punctuation, digits, and emoji without
-    // needing to strip them individually.
     const totalLetters = (cleaned.match(/\p{L}/gu) || []).length;
 
     if (totalLetters === 0) {
@@ -130,27 +89,10 @@ function detectDominantScript(text) {
     return null;
 }
 
-/*
- * -----------------------------------------------------------------
- * Latin-script language refinement
- * -----------------------------------------------------------------
- *
- * franc() is unreliable on the short, hashtag/emoji-heavy titles that
- * social platforms produce. On ordinary English it often answers with
- * an obscure Latin-script language ("sco", "nno", "hat", "tzm", "nds"
- * ...) or a wrong supported one ("fra" for "New Passport Rules 2026
- * #shorts"). Those codes are not among the languages the dashboard
- * can filter or translate, so the posts silently fall out of the
- * Language filter and show a wrong badge.
- *
- * For Latin-dominant text only, re-run franc on the text with the
- * platform noise removed (hashtags, @mentions, URLs, emoji, digits,
- * punctuation) and accept the answer only if it is a Latin-script
- * language the app actually supports; anything else is treated as
- * English, which is what such text almost always is in this dataset.
- * Non-Latin text (CJK, Korean, and the script-guard languages) is
- * never touched.
- */
+// --------------------------------------------------
+// Latin-script language refinement
+// --------------------------------------------------
+
 const SUPPORTED_LATIN_LANGUAGES = new Set([
     "eng", "spa", "fra", "deu", "ind", "vie"
 ]);
@@ -187,14 +129,12 @@ function refineLatinScriptLanguage(text, francCode) {
 }
 
 function repeatedCharRatio(text) {
-    // catches spam like "aaaaaaaa" or "!!!!!!!!"
     const matches = text.match(/(.)\1{3,}/g) || [];
     const repeatedCharsCount = matches.reduce((sum, m) => sum + m.length, 0);
     return text.length ? repeatedCharsCount / text.length : 0;
 }
 
 function symbolRatio(text) {
-    // fraction of characters that aren't letters, numbers, or whitespace
     const symbols = text.replace(/[\p{L}\p{N}\s]/gu, "");
     return text.length ? symbols.length / text.length : 0;
 }
@@ -235,16 +175,11 @@ function repeatedWordRatio(text) {
 }
 
 const STRONG_SCORE = 4;
-const REPEATED_CHAR_STRONG_RATIO = 0.3;   // e.g. "aaaaaaaaaaaaaaaa"
-const SYMBOL_STRONG_RATIO = 0.5;          // e.g. "!!!!####@@@@"
-const REPEATED_WORD_STRONG_RATIO = 0.5;   // e.g. "buy buy buy passport passport"
+const REPEATED_CHAR_STRONG_RATIO = 0.3;
+const SYMBOL_STRONG_RATIO = 0.5;
+const REPEATED_WORD_STRONG_RATIO = 0.5;
 
-// WEAK signals: on their own they're not proof of gibberish (plenty of
-// real posts are short, or use a language franc struggles with) — two
-// weak signals together are treated as suspicious.
 const WEAK_SCORE = 2;
-// franc is unreliable on very short strings, so we only trust an
-// "undetermined" verdict once there's enough text to actually analyze.
 const MIN_LENGTH_TO_TRUST_LANGUAGE_CHECK = 20;
 
 function analyzeText(rawText) {
@@ -277,18 +212,6 @@ const textWithoutUrls = stripUrls(text);
         score += STRONG_SCORE;
     }
 
-    // Local NLP check: statistical language identification (franc).
-    //
-    // Before trusting franc()'s statistics, check for a strong,
-    // unambiguous non-Latin script signal (see detectDominantScript
-    // above). This guards against mixed-script posts — e.g. a
-    // Gurmukhi passport question padded with English platform
-    // metadata (titles, hashtags, "Subscribe to our channel", an
-    // @handle) — being misclassified by franc() as an unrelated
-    // Latin-script language. Latin-script text never matches any
-    // of the configured script ranges, so English/French/Spanish/
-    // etc. detection is completely unaffected and still goes
-    // through franc() exactly as before.
     let detectedLanguage = null;
 
     const scriptLanguage = detectDominantScript(textWithoutUrls);
@@ -298,8 +221,6 @@ const textWithoutUrls = stripUrls(text);
     } else if (textWithoutUrls.length >= MIN_LENGTH_TO_TRUST_LANGUAGE_CHECK) {
         const langCode = franc(textWithoutUrls);
 
-        // The gibberish scoring below intentionally keeps using franc's
-        // raw verdict; only the stored language is refined.
         detectedLanguage =
             langCode === "und"
                 ? null

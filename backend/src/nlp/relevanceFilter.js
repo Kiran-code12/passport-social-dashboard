@@ -42,10 +42,6 @@ const PASSPORT_CONTEXT_PATTERNS = [
     /\bpassport\s+is\b/i
 ];
 
-/*
- * Passport-related words that are not enough by themselves
- * to prove that the post is about a real passport document.
- */
 const WEAK_RELATED_TERMS = [
     "visa",
     "immigration",
@@ -53,12 +49,6 @@ const WEAK_RELATED_TERMS = [
     "travel documents"
 ];
 
-/*
- * Known non-passport-document meanings.
- *
- * These are topic-level exclusions rather than individual
- * post/title exclusions.
- */
 const IRRELEVANT_PATTERNS = [
     "my passport backup",
     "passport holder",
@@ -70,9 +60,7 @@ const IRRELEVANT_PATTERNS = [
     "passport to worlds",
     "passport to world",
 
-    /*
-     * Vehicle/product usage.
-     */
+    // Vehicle/product usage.
     "honda passport",
     "passport trailsport",
     "passport trail sport",
@@ -80,16 +68,12 @@ const IRRELEVANT_PATTERNS = [
     "passport model",
     "passport vehicle",
 
-    /*
-     * Gaming / entertainment / promotional usage.
-     */
+    // Gaming / entertainment / promotional usage.
     "freefire passport",
     "free fire passport",
     "passport game",
 
-    /*
-     * Food / event / tourism promotion usage.
-     */
+    // Food / event / tourism promotion usage.
     "coffee passport",
     "food passport",
     "beer passport",
@@ -115,9 +99,6 @@ function checkRelevance(text) {
         };
     }
 
-    /*
-     * First reject known non-document uses.
-     */
     const matchedIrrelevantPattern = IRRELEVANT_PATTERNS.find(
         (pattern) => normalized.includes(pattern)
     );
@@ -130,9 +111,6 @@ function checkRelevance(text) {
         };
     }
 
-    /*
-     * Then look for meaningful passport-document context.
-     */
     const matchedContextPattern = PASSPORT_CONTEXT_PATTERNS.find(
         (pattern) => pattern.test(normalized)
     );
@@ -144,9 +122,6 @@ function checkRelevance(text) {
         };
     }
 
-    /*
-     * A bare "passport" is not enough.
-     */
     if (normalized.includes("passport")) {
         return {
             isRelevant: false,
@@ -154,10 +129,6 @@ function checkRelevance(text) {
         };
     }
 
-    /*
-     * Visa/immigration/travel alone does not make something
-     * a passport post.
-     */
     const matchedRelatedTerm = WEAK_RELATED_TERMS.find(
         (term) => normalized.includes(term)
     );

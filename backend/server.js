@@ -98,11 +98,6 @@ app.use((req, res) => {
 app.use((err, req, res, next) => {
     console.error("Server Error:", err);
 
-    /*
-     * Translation validation / unsupported-language
-     * errors should be reported as a client error,
-     * not as a generic 500 server error.
-     */
     const message = err?.message || "Internal server error";
 
     const isClientError =
@@ -118,9 +113,6 @@ app.use((err, req, res, next) => {
         });
     }
 
-    /*
-     * Unexpected errors remain genuine 500 errors.
-     */
     return res.status(500).json({
         success: false,
         message: "Internal server error"
@@ -139,16 +131,6 @@ app.listen(PORT, () => {
 
 startScraperScheduler();
 
-  /*
-   * Translation models are loaded lazily on first use by
-   * translationWorker.js's getPipeline() regardless of whether
-   * warm-up runs — warm-up only pre-loads them ahead of time so
-   * the first real request for each language doesn't pay the
-   * load cost. That eager loading of up to ~20 models at startup
-   * is opt-in (WARM_UP_MODELS=true) since it adds significant
-   * startup memory/CPU pressure; by default the backend starts
-   * without it and each model loads on demand instead.
-   */
   if (process.env.WARM_UP_MODELS === "true") {
     warmUpModels().catch((error) => {
       console.error("[Translator] Warm-up failed to start:", error.message);

@@ -1,13 +1,3 @@
-/**
- * Detect the country/region mentioned in passport-related content.
- *
- * Important:
- * Use word/phrase matching instead of plain substring matching.
- * This prevents:
- *   "us"  -> matching "Australia", "Russia", "status", etc.
- *   "uk"  -> matching unrelated words.
- */
-
 const REGION_RULES = [
     {
         region: "India",
@@ -230,28 +220,11 @@ const REGION_RULES = [
 ];
 
 
-/**
- * Escape special regex characters.
- */
 function escapeRegex(text) {
     return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 
-/**
- * Check whether a keyword exists as a complete word/phrase.
- *
- * Example:
- *   "us" matches "I live in the US"
- *
- * But:
- *   "us" does NOT match:
- *   Australia
- *   Russia
- *   status
- *   serious
- *   discuss
- */
 function containsKeyword(text, keyword) {
     const escaped = escapeRegex(keyword);
 
@@ -264,15 +237,6 @@ function containsKeyword(text, keyword) {
 }
 
 
-/**
- * Detect region from text.
- *
- * Returns:
- *   "India"
- *   "UnitedStates"
- *   "Russia"
- *   null
- */
 function detectRegion(rawText) {
     if (!rawText) {
         return null;

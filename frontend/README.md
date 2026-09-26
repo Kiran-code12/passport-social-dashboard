@@ -1,16 +1,26 @@
-# React + Vite
+# Passport Social Dashboard — Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React (Vite) single-page dashboard for the Passport Social Media Scraper Dashboard. It displays passport-related posts scraped from YouTube, Reddit, and Bluesky, with filtering, search, on-demand translation, clustering, and CSV/PDF export.
 
-Currently, two official plugins are available:
+See the [root README](../README.md) for the full project overview, backend setup, and API documentation.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Running locally
 
-## React Compiler
+```bash
+npm install
+npm run dev       # starts the Vite dev server
+npm run build     # production build, output to dist/
+npm run preview   # preview the production build locally
+npm run lint      # ESLint
+```
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Backend URL configuration
 
-## Expanding the ESLint configuration
+The backend API URL is currently hardcoded as two constants near the top of `src/App.jsx`:
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+```js
+const API_BASE = "https://144-24-140-31.sslip.io/api/posts";
+const TRANSLATE_API = "https://144-24-140-31.sslip.io/api/translate";
+```
+
+To point the frontend at a different backend (for example, a local instance running on `http://localhost:5000`), edit these two lines and rebuild. There is no environment variable for this.

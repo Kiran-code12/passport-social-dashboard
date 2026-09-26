@@ -1,8 +1,12 @@
 {
-  "name": "frontend",
+  "name": "passport-social-dashboard-frontend",
+  "description": "React dashboard frontend for the Passport Social Media Scraper Dashboard.",
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -10,7 +14,6 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "axios": "^1.20.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },

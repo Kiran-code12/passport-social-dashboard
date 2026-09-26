@@ -1,15 +1,3 @@
-/*
- * Display-only mapping for language codes.
- *
- * The backend detects languages with `franc`, which returns ISO 639-3
- * codes ("eng", "fra", "hnj"). Those codes remain the stored values and
- * the values sent to the API — this file only controls what the user
- * sees in the language filter.
- *
- * Any code missing from the map falls back to the code itself, so an
- * unmapped language can never break the dropdown.
- */
-
 const LANGUAGE_NAMES = {
     // Widely used
     eng: "English",
@@ -166,10 +154,6 @@ const LANGUAGE_NAMES = {
     hmn: "Hmong",
     mnp: "Min Bei Chinese",
 
-   
-
-
-    // Detector output for "could not determine"
     und: "Unknown"
 };
 

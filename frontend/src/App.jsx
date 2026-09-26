@@ -3,8 +3,8 @@ import "./App.css";
 import "./translation.css";
 import { getLanguageName } from "./languageNames";
 
-const API_BASE = "https://passport-social-dashboard-p1he.onrender.com/api/posts";
-const TRANSLATE_API = "https://passport-social-dashboard-p1he.onrender.com/api/translate";
+const API_BASE = "https://144-24-140-31.sslip.io/api/posts";
+const TRANSLATE_API = "https://144-24-140-31.sslip.io/api/translate";
 
 const translationLanguages = [
   ["english", "English", "eng"],
@@ -18,6 +18,7 @@ const translationLanguages = [
   ["japanese", "Japanese", "jpn"],
   ["vietnamese", "Vietnamese", "vie"],
   ["indonesian", "Indonesian", "ind"],
+  ["punjabi", "Punjabi", "pan"],
 ].map(([value, label, code]) => ({ value, label, code }));
 
 const platforms = ["All", "youtube", "reddit", "bluesky"];

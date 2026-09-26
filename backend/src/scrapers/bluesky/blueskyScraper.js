@@ -233,7 +233,6 @@ async function saveToSupabase(posts) {
         return;
     }
 
-    // Keep translations already saved on re-fetched posts (see helper).
     const rows =
         await preserveExistingTranslations(validPosts);
 

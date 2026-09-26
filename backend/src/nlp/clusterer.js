@@ -43,15 +43,6 @@ function normalizeText(text) {
         .trim();
 }
 
-/*
- * YouTube original_text contains:
- *
- * TITLE
- *
- * DESCRIPTION
- *
- * We only want the title for the main clustering decision.
- */
 function extractTitle(post) {
     if (post.title && typeof post.title === "string") {
         return post.title.trim();
@@ -72,10 +63,6 @@ function extractTitle(post) {
         return "";
     }
 
-    /*
-     * First non-empty line is the YouTube title
-     * in our normalized database records.
-     */
     return lines[0];
 }
 
@@ -90,14 +77,6 @@ function tokenize(text) {
     ];
 }
 
-/*
- * Kept as a lightweight, cheap secondary signal (see
- * shouldCluster below) — no longer the primary clustering
- * decision. Two posts sharing zero meaningful terms almost
- * certainly aren't about the same specific story even when an
- * embedding model gives them a middling similarity score for
- * being in the same general domain.
- */
 function sharesMeaningfulTerm(textA, textB) {
     const a = tokenize(textA);
     const b = tokenize(textB);
@@ -111,20 +90,6 @@ function sharesMeaningfulTerm(textA, textB) {
     return a.some((word) => bSet.has(word));
 }
 
-/*
- * Text used to represent a post for semantic comparison: the
- * title plus the (already clean, hashtag/URL-stripped) AI
- * summary gives the embedding model a short, denoised signal
- * of what the post is actually about, which is far more
- * reliable than raw scraped text.
- *
- * When a user has already requested an English translation for
- * this post (stored in post.translations.english by the
- * existing on-demand translation feature), prefer it so posts
- * in different languages about the same story can still land in
- * the same cluster. This only uses translation data that
- * already exists — it never triggers a new translation.
- */
 function getClusterText(post) {
     const englishTranslation =
         post.translations &&
@@ -193,11 +158,6 @@ function getEmbedder() {
     return embedderPromise;
 }
 
-/*
- * Returns a normalized sentence embedding, or null when there's
- * no usable text (so the caller can skip clustering that post
- * rather than comparing against a meaningless zero vector).
- */
 async function embedText(text) {
     const normalized = (text || "").trim();
 
@@ -245,29 +205,6 @@ function sameCategory(postA, postB) {
     return postA.category === postB.category;
 }
 
-/*
- * Semantic meaning (embedding cosine similarity) drives the
- * decision. Category and shared-term checks only ever narrow
- * the borderline range — they never override a strong semantic
- * match, and they never create a match on their own.
- *
- *   >= HIGH_SEMANTIC_THRESHOLD:
- *       Same story/topic even if the categorizer disagreed or
- *       no meaningful words are literally shared (e.g. "minors"
- *       vs "children under 15").
- *
- *   [MODERATE_SEMANTIC_THRESHOLD, HIGH_SEMANTIC_THRESHOLD):
- *       Same general domain, but this is also where two
- *       different specific stories about the same broad subject
- *       tend to land (e.g. "passport fees" vs "passport photo
- *       requirements"). Only cluster these when the categorizer
- *       also agrees AND the posts share at least one specific,
- *       non-generic term — guarding against "same category but
- *       different topic" false positives.
- *
- *   < MODERATE_SEMANTIC_THRESHOLD:
- *       Not related.
- */
 const HIGH_SEMANTIC_THRESHOLD = 0.62;
 const MODERATE_SEMANTIC_THRESHOLD = 0.48;
 
@@ -337,17 +274,6 @@ async function clusterPosts(posts) {
 
         if (!matchedCluster) {
             matchedCluster = {
-                /*
-                 * Reuse the cluster_id this post already had from
-                 * the previous clustering run (fetched from
-                 * Supabase) whenever one exists, instead of always
-                 * minting a fresh UUID. Otherwise every 20-minute
-                 * clustering cycle reassigns new random cluster IDs
-                 * to unchanged groups, which breaks any UI state
-                 * (React keys, "seen" tracking, etc.) keyed on
-                 * cluster_id even though the grouping itself didn't
-                 * change.
-                 */
                 cluster_id: post.cluster_id || crypto.randomUUID(),
                 posts: []
             };

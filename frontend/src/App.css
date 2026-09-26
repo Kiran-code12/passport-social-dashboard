@@ -1535,6 +1535,5 @@ select {
 .active-filters>button{height:25px;border:0;background:transparent;color:#4f46e5;font-size:9px;font-weight:800;cursor:pointer;padding:0 4px}
 .filter-status{margin:0 0 12px;padding:8px 10px;border-radius:8px;background:#f8fafc;color:#94a3b8;font-size:9px}
 
-/* Similar-posts cluster toggle (was a static <p>, now a button) */
 button.cluster-more{display:inline-block;margin:10px 4px 2px;padding:0;border:0;background:transparent;color:#4f46e5;font-size:9px;font-weight:700;cursor:pointer;text-align:left}
 button.cluster-more:hover{text-decoration:underline}

@@ -1,23 +1,5 @@
 const supabase = require("../config/supabase");
 
-/*
- * Scrapers upsert every post they find on every cycle, and an upsert
- * overwrites every column present in the payload. Each scraper's
- * payload includes `translations: {}`, so every post that is fetched
- * again (YouTube and Bluesky only look at the last 24 hours, so all
- * recent posts are fetched again every 20 minutes) would silently lose
- * the translations that /api/translate saved on the row, along with
- * the ability to find the post by its translated text.
- *
- * This looks up what is already stored for the batch and puts it back
- * into the payload, so the upsert rewrites the existing value instead
- * of clearing it. New posts are untouched and still get `{}`.
- *
- * If the lookup fails, this throws rather than continuing: carrying on
- * would perform exactly the overwrite this exists to prevent.
- */
-
-// Bluesky post ids are ~70 characters, so keep each lookup URL short.
 const LOOKUP_CHUNK_SIZE = 25;
 
 const rowKey = (platform, postId) => `${platform}\u0000${postId}`;

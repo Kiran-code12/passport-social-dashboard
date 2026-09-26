@@ -91,7 +91,6 @@ async function normalizeVideo(item, stats) {
 
     const videoStats = stats[videoId] || {};
 
-    // Prefer the full description
     const fullDescription =
         videoStats.fullDescription ||
         snippet.description ||
@@ -100,17 +99,14 @@ async function normalizeVideo(item, stats) {
     const combinedText =
         `${snippet.title}\n\n${fullDescription}`.trim();
 
-    // Step 1: Gibberish / spam analysis
     const analysis = analyzeText(combinedText);
 
-    // Step 2: Relevance check
     const relevance =
         checkRelevance(combinedText);
 
     let category = null;
     let summary = null;
 
-    // Step 3: Categorization + summary
     if (
         !analysis.isGibberish &&
         relevance.isRelevant
@@ -126,7 +122,6 @@ async function normalizeVideo(item, stats) {
         summary = summaryResult.summary;
     }
 
-    // Step 4: Sentiment analysis
     const sentiment =
         analyzeSentiment(combinedText);
 
@@ -196,7 +191,6 @@ async function saveToSupabase(posts) {
         return;
     }
 
-    // Keep translations already saved on re-fetched posts (see helper).
     const rows = await preserveExistingTranslations(posts);
 
     const { data, error } =

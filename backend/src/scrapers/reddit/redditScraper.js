@@ -25,9 +25,6 @@ const RETRY_DELAY_MS = 3000;
 const SUBREDDIT_DELAY_MS = 8000;
 
 
-/**
- * Wait helper
- */
 function sleep(ms) {
     return new Promise(resolve => {
         setTimeout(resolve, ms);
@@ -35,9 +32,6 @@ function sleep(ms) {
 }
 
 
-/**
- * Clean Reddit HTML / entities.
- */
 function decodeHtml(text) {
 
     if (!text) {
@@ -118,9 +112,6 @@ function decodeHtml(text) {
 }
 
 
-/**
- * Clean title.
- */
 function cleanTitle(title) {
 
     return decodeHtml(title || "")
@@ -129,9 +120,6 @@ function cleanTitle(title) {
 }
 
 
-/**
- * Clean content.
- */
 function cleanContent(content) {
 
     return decodeHtml(content || "")
@@ -140,9 +128,6 @@ function cleanContent(content) {
 }
 
 
-/**
- * Normalize one Reddit post.
- */
 async function normalizePost(
     post,
     subreddit
@@ -234,13 +219,6 @@ async function normalizePost(
         );
 
 
-    /*
-     * Reddit RSS does not expose reliable
-     * score/comment/view counts.
-     *
-     * We intentionally keep these as zero
-     * instead of creating fake engagement.
-     */
     const engagement = {
         views: 0,
         likes: 0,
@@ -315,9 +293,6 @@ async function normalizePost(
 }
 
 
-/**
- * Fetch subreddit RSS feed.
- */
 async function fetchSubreddit(
     subreddit
 ) {
@@ -424,9 +399,6 @@ async function fetchSubreddit(
 }
 
 
-/**
- * Save posts to Supabase.
- */
 async function saveToSupabase(posts) {
 
     if (posts.length === 0) {
@@ -439,7 +411,6 @@ async function saveToSupabase(posts) {
     }
 
 
-    // Keep translations already saved on re-fetched posts (see helper).
     const rows =
         await preserveExistingTranslations(posts);
 
@@ -475,9 +446,6 @@ async function saveToSupabase(posts) {
 }
 
 
-/**
- * Run Reddit scraper.
- */
 async function runRedditScraper() {
 
     console.log(
@@ -535,7 +503,6 @@ async function runRedditScraper() {
                     ).getTime();
 
 
-                // Last 24 hours only
                 if (
                     !publishedTime ||
                     publishedTime < cutoffTime
@@ -592,7 +559,6 @@ async function runRedditScraper() {
         }
 
 
-        // Avoid hammering Reddit
         await sleep(
             SUBREDDIT_DELAY_MS
         );

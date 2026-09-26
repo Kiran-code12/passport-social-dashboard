@@ -6,18 +6,6 @@ const PDFDocument = require("pdfkit");
 |--------------------------------------------------------------------------
 | Engagement calculation
 |--------------------------------------------------------------------------
-|
-| Each platform exposes different engagement metrics.
-|
-| YouTube:
-| views + likes + comments
-|
-| Reddit:
-| score/upvotes + comments
-|
-| Bluesky:
-| likes + reposts + replies/comments
-|
 */
 
 const calculateEngagement = (post) => {
@@ -51,9 +39,6 @@ const calculateEngagement = (post) => {
         );
     }
 
-    /*
-     * Fallback for any future platform.
-     */
     return Number(post.total_engagement || 0);
 };
 
@@ -124,14 +109,6 @@ const getCategoryName = (post) => {
 |--------------------------------------------------------------------------
 | Export sort helper
 |--------------------------------------------------------------------------
-|
-| The CSV/PDF exports receive the same `sort` / `order` query params as
-| GET /api/posts. This sorts export rows the way the dashboard feed is
-| sorted (same fields as getPosts, same NaN handling, and the same
-| tie-break by post id), so an exported file lists posts in the order
-| the user sees on screen. Without params it keeps the previous default:
-| newest published_at first.
-|--------------------------------------------------------------------------
 */
 
 const EXPORT_SORT_FIELDS = [
@@ -186,7 +163,6 @@ const sortPostsForExport = (posts, sort, order) => {
         const bv = sortKey(b);
 
         if (av === bv) {
-            // Same tie-break as the dashboard: ascending by id.
             return idOf(a).localeCompare(idOf(b));
         }
 
@@ -232,13 +208,6 @@ const buildPostsQuery = (req) => {
         );
     }
 
-    /*
-     * Region is stored as a compact PascalCase token
-     * (e.g. "UnitedStates", "UnitedArabEmirates") but the
-     * frontend field is free text (e.g. "United States",
-     * "us"). An exact match here would almost never hit,
-     * so we strip whitespace and match as a substring.
-     */
     if (region) {
         const normalizedRegion = region.replace(/\s+/g, "");
 
@@ -249,14 +218,6 @@ const buildPostsQuery = (req) => {
     }
 
     if (creator) {
-        /*
-         * `.or()` takes a raw filter string in which , ( ) and quotes
-         * are syntax, so typed text spliced in unquoted could break the
-         * query (a comma returned HTTP 500) or inject extra conditions
-         * (bypassing the creator filter). Wrapping the value in double
-         * quotes, with \ and " escaped, makes PostgREST read it as
-         * plain text. The ILIKE wildcard behavior is unchanged.
-         */
         const quoted = `"%${String(creator).replace(/[\\"]/g, "\\$&")}%"`;
 
         query = query.or(
@@ -271,17 +232,6 @@ const buildPostsQuery = (req) => {
         );
     }
 
-    /*
-     * Category may be stored as either:
-     *
-     * "Renewal"
-     *
-     * OR
-     *
-     * {"category":"Renewal",...}
-     *
-     * The ilike approach supports both current formats.
-     */
     if (category) {
         query = query.ilike(
             "category",
@@ -310,12 +260,6 @@ const buildPostsQuery = (req) => {
         );
     }
 
-    /*
-     * last24h is calculated using the current time.
-     *
-     * This remains a real time filter. It does not
-     * manufacture fresh posts when the database is stale.
-     */
     if (last24h === "true") {
         const twentyFourHoursAgo =
             new Date(
@@ -363,11 +307,6 @@ const getPosts = async (req, res) => {
             String(order).toLowerCase() === "asc";
 
 
-        /*
-         * Engagement cannot be sorted directly by Supabase
-         * because it is calculated from platform-specific
-         * JSONB fields.
-         */
         if (sortField === "engagement") {
 
             const { data, error } =
@@ -386,9 +325,6 @@ const getPosts = async (req, res) => {
             );
 
 
-            /*
-             * Minimum engagement filter
-             */
             if (minEngagement !== undefined) {
                 const minimum =
                     Number(minEngagement);
@@ -402,10 +338,6 @@ const getPosts = async (req, res) => {
                 }
             }
 
-
-            /*
-             * Sort calculated engagement
-             */
             posts.sort((a, b) => {
 
                 const aValue =
@@ -468,9 +400,6 @@ const getPosts = async (req, res) => {
         }
 
 
-        /*
-         * Normal database sorting
-         */
         let query =
             buildPostsQuery(req);
 
@@ -502,9 +431,6 @@ const getPosts = async (req, res) => {
         );
 
 
-        /*
-         * Minimum engagement filter
-         */
         if (minEngagement !== undefined) {
 
             const minimum =
@@ -518,7 +444,6 @@ const getPosts = async (req, res) => {
                 );
             }
         }
-
 
         return res.json({
             success: true,
@@ -587,11 +512,6 @@ const getPosts = async (req, res) => {
 |--------------------------------------------------------------------------
 | Text search helper
 |--------------------------------------------------------------------------
-|
-| Shared by searchPosts and the CSV/PDF exports, so exports
-| honor an active search term the same way the search
-| endpoint does.
-|--------------------------------------------------------------------------
 */
 
 const matchesSearchTerm = (post, searchTerm) => {
@@ -617,12 +537,6 @@ const matchesSearchTerm = (post, searchTerm) => {
 |--------------------------------------------------------------------------
 | SEARCH POSTS
 |--------------------------------------------------------------------------
-|
-| Searches:
-| - original_text
-| - summary
-| - translations
-|
 */
 
 const searchPosts = async (req, res) => {
@@ -706,9 +620,6 @@ const searchPosts = async (req, res) => {
 |--------------------------------------------------------------------------
 | CSV EXPORT
 |--------------------------------------------------------------------------
-|
-| Uses the same filters as GET /api/posts.
-|--------------------------------------------------------------------------
 */
 
 const exportCSV = async (req, res) => {
@@ -746,11 +657,6 @@ const exportCSV = async (req, res) => {
                 data || []
             );
 
-
-        /*
-         * Apply active search term, same matching as
-         * GET /api/posts/search.
-         */
         if (req.query.q && req.query.q.trim()) {
             const searchTerm = req.query.q.trim().toLowerCase();
 
@@ -759,10 +665,6 @@ const exportCSV = async (req, res) => {
             );
         }
 
-
-        /*
-         * Apply minimum engagement
-         */
         if (
             req.query.minEngagement !==
             undefined
@@ -783,16 +685,11 @@ const exportCSV = async (req, res) => {
             }
         }
 
-
-        /*
-         * Order like the dashboard feed (requested sort + order).
-         */
         posts = sortPostsForExport(
             posts,
             req.query.sort,
             req.query.order
         );
-
 
         const exportData =
             posts.map((post) => ({
@@ -864,9 +761,6 @@ const exportCSV = async (req, res) => {
 |--------------------------------------------------------------------------
 | PDF EXPORT
 |--------------------------------------------------------------------------
-|
-| Uses the same filters as GET /api/posts.
-|--------------------------------------------------------------------------
 */
 
 const exportPDF = async (req, res) => {
@@ -900,10 +794,6 @@ const exportPDF = async (req, res) => {
             );
 
 
-        /*
-         * Apply active search term, same matching as
-         * GET /api/posts/search.
-         */
         if (req.query.q && req.query.q.trim()) {
             const searchTerm = req.query.q.trim().toLowerCase();
 
@@ -912,10 +802,6 @@ const exportPDF = async (req, res) => {
             );
         }
 
-
-        /*
-         * Minimum engagement
-         */
         if (
             req.query.minEngagement !==
             undefined
@@ -936,16 +822,11 @@ const exportPDF = async (req, res) => {
             }
         }
 
-
-        /*
-         * Order like the dashboard feed (requested sort + order).
-         */
         posts = sortPostsForExport(
             posts,
             req.query.sort,
             req.query.order
         );
-
 
         const doc =
             new PDFDocument({

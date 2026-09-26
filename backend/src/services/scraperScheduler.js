@@ -1,7 +1,8 @@
 const path = require("path");
 const { spawn } = require("child_process");
 
-const SCRAPE_INTERVAL_MS = 20 * 60 * 1000;
+const SCRAPE_INTERVAL_MINUTES = Number(process.env.SCRAPE_INTERVAL_MINUTES) || 20;
+const SCRAPE_INTERVAL_MS = SCRAPE_INTERVAL_MINUTES * 60 * 1000;
 
 let schedulerStarted = false;
 let isRunning = false;
@@ -141,20 +142,20 @@ function startScraperScheduler() {
     );
 
     console.log(
-        "[Scheduler] Scraping interval: every 20 minutes."
+        `[Scheduler] Scraping interval: every ${SCRAPE_INTERVAL_MINUTES} minutes.`
     );
 
-    // Run once immediately when backend starts.
-    runAllScrapers().catch((error) => {
-        console.error(
-            "[Scheduler] Initial scraping cycle failed:",
-            error.message
-        );
+    if (process.env.SCRAPE_ON_STARTUP !== "false") {
+        runAllScrapers().catch((error) => {
+            console.error(
+                "[Scheduler] Initial scraping cycle failed:",
+                error.message
+            );
 
-        isRunning = false;
-    });
+            isRunning = false;
+        });
+    }
 
-    // Continue automatically every 20 minutes.
     setInterval(() => {
         runAllScrapers().catch((error) => {
             console.error(

@@ -23,13 +23,7 @@ function hasAny(text, patterns) {
     return patterns.some((pattern) => pattern.test(text));
 }
 
-/*
- * High-confidence rules.
- *
- * Rules are checked before the AI model.
- * The goal is to handle obvious categories deterministically
- * and use the AI model only for genuinely ambiguous content.
- */
+
 function getRuleCategory(text) {
     const lower = text.toLowerCase();
 
@@ -56,13 +50,6 @@ function getRuleCategory(text) {
 
     // --------------------------------------------------
     // 2. RENEWAL
-    //
-    // IMPORTANT:
-    // Renewal is checked BEFORE Tatkal.
-    //
-    // Example:
-    // "Premium Fast Track Passport Renewals UK"
-    // should be Renewal, not Tatkal.
     // --------------------------------------------------
 
     if (
@@ -88,8 +75,6 @@ function getRuleCategory(text) {
 
     // --------------------------------------------------
     // 3. TATKAL
-    //
-    // Only explicit Tatkal/urgent/expedited wording.
     // --------------------------------------------------
 
     if (
@@ -109,8 +94,6 @@ function getRuleCategory(text) {
 
     // --------------------------------------------------
     // 4. SCAMS / FRAUD
-    //
-    // Only strong fraud indicators.
     // --------------------------------------------------
 
     if (
@@ -174,7 +157,6 @@ function getRuleCategory(text) {
             /\bpassport eligibility\b/i,
             /\bpassport requirements?\b/i,
 
-            // Passport photo requirements/content
             /\bpassport photo\b/i,
             /\bpassport size photo\b/i,
             /\bpassport-size photo\b/i,
@@ -241,7 +223,6 @@ function getRuleCategory(text) {
             /\bpassport policy\b/i,
             /\bpassport rules\b/i,
 
-            // Political/current government wording
             /\btrump.*passport\b/i,
             /\bpassport.*trump\b/i
         ])
@@ -255,8 +236,6 @@ function getRuleCategory(text) {
 
     // --------------------------------------------------
     // 9. NEWS
-    //
-    // Includes historical/current-event passport stories.
     // --------------------------------------------------
 
     if (
@@ -275,12 +254,10 @@ function getRuleCategory(text) {
             /\bpassport index\b/i,
             /\bpassport ranking\b/i,
 
-            // Common current-event wording
             /\bpassport.*controversy\b/i,
             /\bpassport.*investigation\b/i,
             /\bpassport.*political\b/i,
 
-            // Thai current-event signals
             /สอบ.*TH-AI Passport/i,
             /TH-AI Passport.*สอบ/i,
             /พิรุธ/i,
@@ -387,7 +364,6 @@ async function categorizeText(text) {
         };
     }
 
-    // Step 1: deterministic rules
     const ruleResult = getRuleCategory(trimmed);
 
     if (ruleResult) {
@@ -399,7 +375,6 @@ async function categorizeText(text) {
         };
     }
 
-    // Step 2: AI fallback
     const classifier = await getClassifier();
 
     const result = await classifier(trimmed, CATEGORIES, {

@@ -1,0 +1,156 @@
+{
+  "info": {
+    "name": "Passport Social Dashboard API",
+    "description": "API for the Passport Social Media Scraper Dashboard. All endpoints are public (no authentication). Set the baseUrl collection variable to switch between production and local development.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "https://144-24-140-31.sslip.io", "type": "string" },
+    { "key": "postId", "value": "", "type": "string", "description": "A real post's id column value, copied from a GET /api/posts response." }
+  ],
+  "item": [
+    {
+      "name": "Status",
+      "item": [
+        {
+          "name": "Health check",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/health", "host": ["{{baseUrl}}"], "path": ["api", "health"] }
+          }
+        },
+        {
+          "name": "Database connection test",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/test-db", "host": ["{{baseUrl}}"], "path": ["api", "test-db"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Posts",
+      "item": [
+        {
+          "name": "Get posts (no filters)",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/posts", "host": ["{{baseUrl}}"], "path": ["api", "posts"] }
+          }
+        },
+        {
+          "name": "Get posts (filtered and sorted)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/posts?platform=youtube&category=Renewal&sentiment=Positive&language=eng&region=India&last24h=true&minEngagement=10&sort=engagement&order=desc",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "posts"],
+              "query": [
+                { "key": "platform", "value": "youtube", "description": "youtube | reddit | bluesky" },
+                { "key": "category", "value": "Renewal" },
+                { "key": "sentiment", "value": "Positive", "description": "Positive | Neutral | Negative" },
+                { "key": "language", "value": "eng", "description": "ISO 639-3 code, e.g. eng, hin, pan" },
+                { "key": "region", "value": "India" },
+                { "key": "creator", "value": "", "description": "matches creator_name or creator_handle", "disabled": true },
+                { "key": "from", "value": "", "description": "ISO date, published_at >=", "disabled": true },
+                { "key": "to", "value": "", "description": "ISO date, published_at <=", "disabled": true },
+                { "key": "last24h", "value": "true" },
+                { "key": "minEngagement", "value": "10" },
+                { "key": "sort", "value": "engagement", "description": "published_at | created_at | platform | category | engagement" },
+                { "key": "order", "value": "desc", "description": "asc | desc" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Search posts",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/posts/search?q=tatkal",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "posts", "search"],
+              "query": [{ "key": "q", "value": "tatkal", "description": "Matches original_text, summary, and translations." }]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Export",
+      "item": [
+        {
+          "name": "Export CSV (filtered)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/posts/export/csv?platform=youtube&sort=published_at&order=desc",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "posts", "export", "csv"],
+              "query": [
+                { "key": "platform", "value": "youtube" },
+                { "key": "q", "value": "", "disabled": true },
+                { "key": "sort", "value": "published_at" },
+                { "key": "order", "value": "desc" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Export PDF (filtered)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/posts/export/pdf?platform=youtube&sort=published_at&order=desc",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "posts", "export", "pdf"],
+              "query": [
+                { "key": "platform", "value": "youtube" },
+                { "key": "q", "value": "", "disabled": true },
+                { "key": "sort", "value": "published_at" },
+                { "key": "order", "value": "desc" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Translation",
+      "item": [
+        {
+          "name": "List supported languages",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/translate/languages", "host": ["{{baseUrl}}"], "path": ["api", "translate", "languages"] }
+          }
+        },
+        {
+          "name": "Translate text (with postId, cached on repeat)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"How long does a Tatkal passport renewal take?\",\n  \"sourceLanguage\": \"eng\",\n  \"targetLanguage\": \"hindi\",\n  \"postId\": \"{{postId}}\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/translate", "host": ["{{baseUrl}}"], "path": ["api", "translate"] }
+          }
+        },
+        {
+          "name": "Translate text (no postId, not cached)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"The paper passport is officially dead.\",\n  \"targetLanguage\": \"spanish\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/translate", "host": ["{{baseUrl}}"], "path": ["api", "translate"] }
+          }
+        }
+      ]
+    }
+  ]
+}

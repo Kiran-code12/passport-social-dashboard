@@ -1,9 +1,13 @@
 {
-  "name": "backend",
+  "name": "passport-social-dashboard-backend",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Backend API, scrapers, and NLP pipeline for the Passport Social Media Scraper Dashboard.",
+  "main": "server.js",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
+    "start": "node server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
