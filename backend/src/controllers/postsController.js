@@ -2,6 +2,12 @@ const supabase = require("../config/supabase");
 const { Parser } = require("json2csv");
 const PDFDocument = require("pdfkit");
 
+const POST_COLUMNS =
+    "id, platform, post_id, creator_name, creator_handle, original_text, " +
+    "post_url, published_at, language, region, category, sentiment, summary, " +
+    "is_gibberish, is_relevant, cluster_id, engagement, translations, " +
+    "created_at, updated_at";
+
 /*
 |--------------------------------------------------------------------------
 | Engagement calculation
@@ -197,7 +203,7 @@ const buildPostsQuery = (req) => {
 
     let query = supabase
         .from("posts")
-        .select("*")
+        .select(POST_COLUMNS)
         .eq("is_relevant", true)
         .eq("is_gibberish", false);
 
@@ -561,7 +567,7 @@ const searchPosts = async (req, res) => {
             error
         } = await supabase
             .from("posts")
-            .select("*")
+            .select(POST_COLUMNS)
             .eq("is_relevant", true)
             .eq("is_gibberish", false)
             .order(

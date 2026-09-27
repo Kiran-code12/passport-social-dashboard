@@ -394,6 +394,7 @@ function PostCard({
 function App() {
   const [posts, setPosts] = useState([]);
   const [allPosts, setAllPosts] = useState([]);
+  const [statsLoaded, setStatsLoaded] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -502,6 +503,8 @@ function App() {
       setAllPosts(data.data || []);
     } catch (err) {
       console.error(err);
+    } finally {
+      setStatsLoaded(true);
     }
   }
 
@@ -1268,7 +1271,7 @@ function App() {
                 </div>
               </div>
 
-              <strong>{stats.total}</strong>
+              <strong>{statsLoaded ? stats.total : "…"}</strong>
 
               <small>
                 Meaningful content collected
@@ -1285,9 +1288,9 @@ function App() {
               </div>
 
               <strong>
-                {formatEngagement(
-                  stats.engagement
-                )}
+                {statsLoaded
+                  ? formatEngagement(stats.engagement)
+                  : "…"}
               </strong>
 
               <small>
@@ -1307,7 +1310,7 @@ function App() {
               </div>
 
               <strong>
-                {stats.positive}
+                {statsLoaded ? stats.positive : "…"}
               </strong>
 
               <small>
@@ -1350,7 +1353,7 @@ function App() {
                 </div>
 
                 <span className="mini-badge">
-                  {stats.total} posts
+                  {statsLoaded ? stats.total : "…"} posts
                 </span>
               </div>
 
@@ -1383,7 +1386,7 @@ function App() {
                         </span>
 
                         <strong>
-                          {count}
+                          {statsLoaded ? count : "…"}
                         </strong>
                       </div>
 
